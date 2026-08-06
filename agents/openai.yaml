@@ -1,0 +1,4 @@
+interface:
+  display_name: "antiSMASH GenBank Review"
+  short_description: "Review antiSMASH GenBank results safely"
+  default_prompt: "Use $antismash-review to inspect and conservatively review these antiSMASH GenBank results."

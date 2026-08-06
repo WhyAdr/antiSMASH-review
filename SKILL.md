@@ -1,63 +1,66 @@
 ---
-name: antismash-genbank-parser
-description: Specialized parser and analysis tool for antiSMASH GenBank (.gbk) files. Parses cluster topology, contig_edge status, gene_kind classifications, NRPS/PKS domain architecture, catalytic CDS_motifs, and Pfam domains into structured summaries.
+name: antismash-review
+description: Parse and review antiSMASH GenBank files and result directories with strict per-record Biopython semantics, BGC hierarchy, genes, NRPS/PKS domains and modules, motifs, Pfam hits, boundary diagnostics, and Markdown, JSON, or TSV exports. Use for single-region inspection, aggregate GenBank review, deterministic directory discovery, BGC annotation audits, or maintenance of the antismash-review parser and compatibility CLI.
 ---
 
-# antismash-genbank-parser
+# antiSMASH GenBank review
 
-A specialized parser and analytical workflow for antiSMASH GenBank (.gbk) flat-files. Designed for secondary metabolite workflows, BGC panel audits, and biosynthetic gene cluster dissection.
+Use the packaged `inspect` command for analysis and the Python modules for maintenance. Preserve source evidence and qualify biological interpretations conservatively.
 
-## When to Use
+## Run the workflow
 
-- When parsing and analyzing antiSMASH GenBank output files (`.gbk` / `.gb`).
-- When performing batch audits of Biosynthetic Gene Clusters (BGCs) across multiple isolate genomes.
-- When inspecting NRPS/PKS domain architecture, monomer predictions, and catalytic domain integrity.
-- When tallying core vs. cargo genes using antiSMASH `gene_kind` classifications.
-- When evaluating BGC truncation status (`contig_edge="True"`) or searching for adjacent regulatory genes (e.g. LysR-family / `hexS` orthologs).
+1. Install the checkout when needed:
 
-## Hybrid Engine Architecture
+   ```bash
+   python -m pip install -e .
+   ```
 
-The bundled script `scripts/parse_antismash_gbk.py` uses a **hybrid parsing engine**:
-1. **Tag-Aware Line Reflowing (Pre-pass)**: Fixes column ~79 continuation line wrapping using specific re-insertion rules before passing to feature parsing.
-2. **BioPython Integration (Preferred)**: Uses `Bio.SeqIO` to parse feature objects, coordinates, strands, and qualifiers if BioPython is installed.
-3. **Built-in Fallback**: Falls back gracefully to a standard-library parser if BioPython is unavailable in the environment.
+2. Inspect a GenBank file or result directory:
 
-### Core Line Reflowing Rules
-1. **Free-text qualifiers** (`/product=`, `/note=`, `/NRPS_PKS=`): Wrap at space boundaries. Re-insert a space when rejoining continuation lines.
-2. **Fixed token qualifiers** (`/translation=`, `/domain_id=`, `/locus_tag=`, `/db_xref=`): Wrap mid-token. Rejoin directly **without** adding spaces.
+   ```bash
+   python -m antismash_review inspect region001.gbk
+   python -m antismash_review inspect results/ --format json --output review.json
+   python -m antismash_review inspect results/ --recursive --format tsv --output review.tsv
+   ```
 
-## 5 Semantic Layers Parsed
+3. Use `--lenient` only to retain records when a recognized feature cannot be adapted. It does not repair malformed GenBank or switch parsers. Report every emitted diagnostic.
 
-1. **Cluster Topology (`region`, `cand_cluster`, `protocluster`, `proto_core`)**
-   - Extracts product type, detection rules, core location, and `contig_edge` flag.
-   - **BGC Completeness Check**: A BGC with `contig_edge="True"` is truncated at an assembly boundary and must be cross-checked against contig breakpoints before assuming gene content is complete.
+4. Read [references/semantic-contract.md](references/semantic-contract.md) before interpreting hierarchy, domain/module counts, motifs, boundary status, or Pfam totals.
 
-2. **Gene-Level Cross-Walk (`gene`, `CDS`)**
-   - Cross-references locus tags, gene symbols, products, EC numbers, and Bakta evidence codes.
-   - Groups CDS features by antiSMASH `gene_kind` calls (`biosynthetic`, `biosynthetic-additional`, `regulatory`, `transport`, `other`) to provide instant "core vs. cargo" counts.
+## Select inputs deliberately
 
-3. **NRPS/PKS Domain Architecture (`aSDomain`, `aSModule`)**
-   - Extracts domain subtypes (e.g., `Condensation_Starter`, `AMP-binding`, `PCP`, `Thioesterase`), Stachelhaus code specificity predictions, `monomer_pairings` (e.g., `Ser -> Ser`), and SMILES structures.
-   - **Sanity Check**: Verifies predicted substrate specificity against characterized chemical structures (e.g., confirming `Ser` calls for `swrW` serrawettin W1 synthetase).
+- Accept `.gbk`, `.gb`, and `.gbff` files.
+- For a directory, prefer aggregate GenBank files when present; otherwise inspect region files. Discovery is deterministic.
+- Add `--recursive` only when nested directories belong to the intended input set.
+- Do not pass native antiSMASH JSON as input. JSON is currently an output envelope; version-aware antiSMASH JSON adapters and GenBank/JSON merging are not implemented.
 
-4. **Catalytic Domain QC (`CDS_motif`)**
-   - Extracts 11 conserved catalytic motifs (C2/C3/C5/C67, NRPS-A_a2/a3/a6/a8, NRPS-E2) and e-values.
-   - **Integrity Alert**: Missing or high-e-value motifs (>1e-3) inside an otherwise "complete" module indicate potential frameshifts or active-site degeneracy.
+## Interpret results conservatively
 
-5. **Broad Annotations & Regulatory Context (`PFAM_domain`, `misc_feature`)**
-   - **Pfam Domains**: Captures Pfam-A hits across the full extraction window.
-   - **TFBS Caveat**: antiSMASH TFBS Finder uses LogoMotif (Actinobacteria-focused). TFBS predictions in Enterobacterales (*Serratia*, *E. coli*) should be treated as hypothesis-generating.
-   - **Regulatory Synteny**: Scans BGC flanks for local transcriptional regulators (e.g. LysR-family / `hexS` orthologs).
+- Keep every GenBank record distinct.
+- Treat absent `gene_kind` as `unclassified`, not `other`.
+- Count an `aSDomain` as NRPS/PKS architecture only when `aSTool=nrps_pks_domains`; retain all other antiSMASH domains separately.
+- Keep `aSModule` entities separate and inspect missing or duplicate domain-reference diagnostics.
+- Do not apply a universal motif e-value threshold. Interpret motif evidence using the producing tool and motif family.
+- Distinguish boundary-limited context from demonstrated core or CDS truncation.
+- Do not infer TFBS validity, LysR identity, HexS orthology, substrate confirmation, frameshifts, or catalytic loss from parser output alone.
+- Report both raw and deduplicated Pfam counts when comparing annotations.
 
-## CLI Script Usage
+## Choose an export
+
+- Use Markdown for a concise human review.
+- Use JSON for the versioned, structured pre-1.0 review envelope.
+- Use TSV for a compact one-row-per-record comparison table.
+
+## Maintain the codebase
+
+Run all checks after changing parsing, models, discovery, exporters, CLI behavior, or this skill:
 
 ```bash
-# Generate human-readable Markdown report for a single BGC region
-python3 scripts/parse_antismash_gbk.py region011.gbk --format summary
-
-# Batch parse an entire directory of BGC regions into a TSV table
-python3 scripts/parse_antismash_gbk.py /path/to/antiSMASH_results/ --format tsv --output bgc_summary_table.tsv
-
-# Export full structured data as JSON
-python3 scripts/parse_antismash_gbk.py region011.gbk --format json --output region011.json
+python -m ruff check .
+python -m mypy antismash_review
+python -m pytest -q
+python -m pytest --cov=antismash_review --cov-report=term-missing
+python -m antismash_review --help
 ```
+
+Keep local biological integration files private unless redistribution permission is explicit. Tests that use those files must skip cleanly when they are absent.

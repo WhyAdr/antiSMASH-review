@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "antismash-review"
+version = "0.1.0"
+description = "Version-aware review and export of antiSMASH result files"
+requires-python = ">=3.10"
+dependencies = ["biopython>=1.81,<2"]
+
+[project.optional-dependencies]
+test = [
+  "mypy>=1.10",
+  "pytest>=8",
+  "pytest-cov>=5",
+  "ruff>=0.5",
+]
+
+[project.scripts]
+antismash-review = "antismash_review.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["antismash_review*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+packages = ["antismash_review"]
+
+[[tool.mypy.overrides]]
+module = ["Bio.*", "numpy.*"]
+follow_imports = "skip"
+ignore_errors = true

@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Local antiSMASH integration inputs belong outside the distributable skill.
+/*.gb
+/*.gbk
+/*.gbff

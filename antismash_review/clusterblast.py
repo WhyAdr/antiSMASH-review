@@ -57,6 +57,15 @@ def _optional_integer(value: object, field: str, path: Path) -> int | None:
     return _required_integer(value, field, path)
 
 
+def _optional_nonnegative_integer(value: object, field: str, path: Path) -> int | None:
+    result = _optional_integer(value, field, path)
+    if result is not None and result < 0:
+        raise ClusterBlastParseError(
+            f"ClusterBlast {field} must not be negative in {path}: {result}"
+        )
+    return result
+
+
 def _required_float(value: object, field: str, path: Path) -> float:
     if type(value) not in {int, float}:
         raise ClusterBlastParseError(f"ClusterBlast {field} is not numeric in {path}: {value!r}")
@@ -315,7 +324,9 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                 f"ClusterBlast module in record {record_idx} is not a dict in {path}"
             )
 
-        module_schema_version = cb_mod.get("schema_version")
+        module_schema_version = _required_integer(
+            cb_mod.get("schema_version"), "module schema_version", path
+        )
         if module_schema_version != 2:
             raise ClusterBlastParseError(
                 f"Unsupported ClusterBlast module schema version {module_schema_version!r} "
@@ -338,7 +349,9 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                     f"ClusterBlast {sec_key} section is not an object in {path}"
                 )
 
-            result_schema_version = section.get("schema_version")
+            result_schema_version = _required_integer(
+                section.get("schema_version"), f"{sec_key} result schema_version", path
+            )
             if result_schema_version != 5:
                 raise ClusterBlastParseError(
                     f"Unsupported ClusterBlast {sec_key} result schema version "
@@ -367,11 +380,9 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                     raise ClusterBlastParseError(
                         f"ClusterBlast region_number must be positive in {path}: {region_number}"
                     )
-                total_hits = _optional_integer(region_res.get("total_hits"), "total_hits", path)
-                if total_hits is not None and total_hits < 0:
-                    raise ClusterBlastParseError(
-                        f"ClusterBlast total_hits must not be negative in {path}: {total_hits}"
-                    )
+                total_hits = _optional_nonnegative_integer(
+                    region_res.get("total_hits"), "total_hits", path
+                )
                 raw_rankings = region_res.get("ranking", [])
                 if not isinstance(raw_rankings, list):
                     raise ClusterBlastParseError(f"ClusterBlast ranking is not a list in {path}")
@@ -457,8 +468,10 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                             cluster_type=_optional_string(
                                 hit_info.get("cluster_type"), "hit cluster_type", path
                             ),
-                            num_hits=_optional_integer(hit_details.get("hits"), "hit count", path),
-                            core_gene_hits=_optional_integer(
+                            num_hits=_optional_nonnegative_integer(
+                                hit_details.get("hits"), "hit count", path
+                            ),
+                            core_gene_hits=_optional_nonnegative_integer(
                                 hit_details.get("core_gene_hits"),
                                 "core gene hit count",
                                 path,
@@ -472,7 +485,7 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                             core_bonus=_optional_integer(
                                 hit_details.get("core_bonus"), "core_bonus", path
                             ),
-                            similarity=_optional_integer(
+                            similarity=_optional_nonnegative_integer(
                                 hit_details.get("similarity"), "similarity", path
                             ),
                             pairings=pairings,

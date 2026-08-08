@@ -69,7 +69,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
   - `record_id` (default): Exact record ID matching; requires unique IDs on each side.
   - `record_region`: Key by `(record_id, region_number)`; valid only when every record contains exactly one numbered region.
   - `single_record`: Explicit user-requested pairing of single-record inputs with differing IDs.
-  - `coordinate_overlap`: Match records by reciprocal overlap of feature spans. Requires explicit `--assume-shared-coordinate-system` and a reciprocal overlap fraction in `(0, 1]` (default 0.80).
+  - `coordinate_overlap`: Match records by reciprocal overlap of feature spans. Requires explicit `--assume-shared-coordinate-system`; the optional `--min-reciprocal-overlap` override accepts a reciprocal overlap fraction in `(0, 1]` (default 0.80).
 - The coordinate assumption is appropriate only when coordinate correspondence has been independently established, such as re-annotations of the same contigs. It does not establish sequence homology between arbitrary isolates.
 - antiSMASH region GBKs commonly rebase extracted regions to coordinate zero. Such files do not automatically share their original chromosome coordinate system and must not use coordinate matching solely because they came from the same run.
 - Comparison evaluates product gains/losses with multiset counts, new/resolved diagnostics, feature counts delta, and intergenic distance summaries (including circular topology wrap gaps).

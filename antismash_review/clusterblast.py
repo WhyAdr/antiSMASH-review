@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from antismash_review.models import (
     ClusterBlastHit,
@@ -22,6 +24,57 @@ _DETAILS_HEADER_RE = re.compile(r"^(?P<rank>\d+)\.\s+(?P<accession>\S+)$")
 
 class ClusterBlastParseError(RuntimeError):
     """A ClusterBlast sidecar was recognized but could not be parsed safely."""
+
+
+def _required_string(value: object, field: str, path: Path) -> str:
+    if not isinstance(value, str):
+        raise ClusterBlastParseError(f"ClusterBlast {field} is missing or not a string in {path}")
+    return value
+
+
+def _required_nonempty_string(value: object, field: str, path: Path) -> str:
+    result = _required_string(value, field, path)
+    if not result:
+        raise ClusterBlastParseError(f"ClusterBlast {field} is empty in {path}")
+    return result
+
+
+def _optional_string(value: object, field: str, path: Path) -> str | None:
+    if value is None:
+        return None
+    return _required_string(value, field, path)
+
+
+def _required_integer(value: object, field: str, path: Path) -> int:
+    if type(value) is not int:
+        raise ClusterBlastParseError(f"ClusterBlast {field} is not an integer in {path}: {value!r}")
+    return value
+
+
+def _optional_integer(value: object, field: str, path: Path) -> int | None:
+    if value is None:
+        return None
+    return _required_integer(value, field, path)
+
+
+def _required_float(value: object, field: str, path: Path) -> float:
+    if type(value) not in {int, float}:
+        raise ClusterBlastParseError(f"ClusterBlast {field} is not numeric in {path}: {value!r}")
+    try:
+        result = float(cast(int | float, value))
+    except OverflowError as exc:
+        raise ClusterBlastParseError(
+            f"ClusterBlast {field} is not finite in {path}: {value!r}"
+        ) from exc
+    if not math.isfinite(result):
+        raise ClusterBlastParseError(f"ClusterBlast {field} is not finite in {path}: {value!r}")
+    return result
+
+
+def _optional_float(value: object, field: str, path: Path) -> float | None:
+    if value is None:
+        return None
+    return _required_float(value, field, path)
 
 
 def _sha256(path: Path) -> str:
@@ -247,7 +300,7 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
             raise ClusterBlastParseError(
                 f"antiSMASH JSON record {record_idx} is not an object in {path}"
             )
-        rec_id = rec.get("id")
+        rec_id = _required_nonempty_string(rec.get("id"), "containing record id", path)
         modules = rec.get("modules", {})
         if not isinstance(modules, dict):
             raise ClusterBlastParseError(
@@ -269,12 +322,8 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                 f"(expected 2) in {path}"
             )
 
-        cb_record_id = cb_mod.get("record_id")
-        if not isinstance(cb_record_id, str):
-            raise ClusterBlastParseError(
-                f"ClusterBlast module record_id is missing or not a string in {path}"
-            )
-        if rec_id is not None and cb_record_id != rec_id:
+        cb_record_id = _required_nonempty_string(cb_mod.get("record_id"), "module record_id", path)
+        if cb_record_id != rec_id:
             raise ClusterBlastParseError(
                 f"ClusterBlast module record_id {cb_record_id!r} does not match "
                 f"record id {rec_id!r} in {path}"
@@ -311,12 +360,18 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                     raise ClusterBlastParseError(
                         f"ClusterBlast region result missing region_number in {path}"
                     )
-                region_number = region_res["region_number"]
-                if not isinstance(region_number, int):
+                region_number = _required_integer(
+                    region_res["region_number"], "region_number", path
+                )
+                if region_number < 1:
                     raise ClusterBlastParseError(
-                        f"ClusterBlast region_number is not an integer in {path}"
+                        f"ClusterBlast region_number must be positive in {path}: {region_number}"
                     )
-                total_hits = region_res.get("total_hits")
+                total_hits = _optional_integer(region_res.get("total_hits"), "total_hits", path)
+                if total_hits is not None and total_hits < 0:
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast total_hits must not be negative in {path}: {total_hits}"
+                    )
                 raw_rankings = region_res.get("ranking", [])
                 if not isinstance(raw_rankings, list):
                     raise ClusterBlastParseError(f"ClusterBlast ranking is not a list in {path}")
@@ -350,7 +405,7 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                                 f"Invalid query string type in {path}: {query_str!r}"
                             )
                         parts = query_str.split("|", 5)
-                        if len(parts) < 5:
+                        if len(parts) < 5 or not parts[4]:
                             raise ClusterBlastParseError(
                                 f"Malformed query string in {path}: {query_str!r}"
                             )
@@ -362,31 +417,64 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                         pairings.append(
                             ClusterBlastPairing(
                                 query_gene=query_gene,
-                                subject_gene=str(pairing_dict["name"]),
-                                percent_identity=float(pairing_dict["perc_ident"]),
-                                blast_score=float(pairing_dict["blastscore"]),
-                                percent_coverage=float(pairing_dict["perc_coverage"]),
-                                evalue=float(pairing_dict["evalue"]),
-                                subject_protein_id=pairing_dict.get("locus_tag"),
-                                subject_index=subject_idx if isinstance(subject_idx, int) else None,
+                                subject_gene=_required_nonempty_string(
+                                    pairing_dict.get("name"), "pairing name", path
+                                ),
+                                percent_identity=_required_float(
+                                    pairing_dict.get("perc_ident"), "pairing perc_ident", path
+                                ),
+                                blast_score=_required_float(
+                                    pairing_dict.get("blastscore"), "pairing blastscore", path
+                                ),
+                                percent_coverage=_required_float(
+                                    pairing_dict.get("perc_coverage"),
+                                    "pairing perc_coverage",
+                                    path,
+                                ),
+                                evalue=_required_float(
+                                    pairing_dict.get("evalue"), "pairing evalue", path
+                                ),
+                                subject_protein_id=_optional_string(
+                                    pairing_dict.get("locus_tag"),
+                                    "pairing locus_tag",
+                                    path,
+                                ),
+                                subject_index=_optional_integer(
+                                    subject_idx, "pairing subject_index", path
+                                ),
                             )
                         )
 
-                    raw_blast_score = hit_details.get("blast_score")
                     rankings.append(
                         ClusterBlastHit(
                             rank=rank_idx,
-                            accession=str(hit_info["accession"]),
-                            description=str(hit_info["description"]),
-                            cluster_type=hit_info.get("cluster_type"),
-                            num_hits=hit_details.get("hits"),
-                            core_gene_hits=hit_details.get("core_gene_hits"),
-                            blast_score=float(raw_blast_score)
-                            if raw_blast_score is not None
-                            else None,
-                            synteny_score=hit_details.get("synteny_score"),
-                            core_bonus=hit_details.get("core_bonus"),
-                            similarity=hit_details.get("similarity"),
+                            accession=_required_nonempty_string(
+                                hit_info.get("accession"), "hit accession", path
+                            ),
+                            description=_required_string(
+                                hit_info.get("description"), "hit description", path
+                            ),
+                            cluster_type=_optional_string(
+                                hit_info.get("cluster_type"), "hit cluster_type", path
+                            ),
+                            num_hits=_optional_integer(hit_details.get("hits"), "hit count", path),
+                            core_gene_hits=_optional_integer(
+                                hit_details.get("core_gene_hits"),
+                                "core gene hit count",
+                                path,
+                            ),
+                            blast_score=_optional_float(
+                                hit_details.get("blast_score"), "hit blast_score", path
+                            ),
+                            synteny_score=_optional_integer(
+                                hit_details.get("synteny_score"), "synteny_score", path
+                            ),
+                            core_bonus=_optional_integer(
+                                hit_details.get("core_bonus"), "core_bonus", path
+                            ),
+                            similarity=_optional_integer(
+                                hit_details.get("similarity"), "similarity", path
+                            ),
                             pairings=pairings,
                         )
                     )
@@ -416,7 +504,7 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
         return _parse_clusterblast_json_unchecked(path)
     except ClusterBlastParseError:
         raise
-    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as exc:
         raise ClusterBlastParseError(
             f"Malformed ClusterBlast JSON structure in {path}: {exc}"
         ) from exc

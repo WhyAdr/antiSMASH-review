@@ -34,7 +34,7 @@ Use the packaged `inspect` and `compare` commands for analysis and the Python mo
    python -m antismash_review compare ref.gb alt.gb --match-by coordinate_overlap --assume-shared-coordinate-system
    ```
 
-   Supported record matching modes: `record_id` (default), `record_region`, `single_record`, and `coordinate_overlap` (requires `--assume-shared-coordinate-system` and `--min-reciprocal-overlap`). Use coordinate matching only when coordinate correspondence is independently established (e.g. re-annotations of identical contigs), not between arbitrary isolates or rebased region files.
+   Supported record matching modes: `record_id` (default), `record_region`, `single_record`, and `coordinate_overlap`. Coordinate mode requires `--assume-shared-coordinate-system`; `--min-reciprocal-overlap` optionally changes the default 0.80 threshold. Use coordinate matching only when coordinate correspondence is independently established (e.g. re-annotations of identical contigs), not between arbitrary isolates or rebased region files.
 
 4. Use `--lenient` only to retain records when a recognized feature or sidecar cannot be adapted. It does not repair malformed GenBank or switch parsers. Report every emitted diagnostic.
 
@@ -71,14 +71,31 @@ Use the packaged `inspect` and `compare` commands for analysis and the Python mo
 
 ## Maintain the codebase
 
-Run all checks after changing parsing, models, discovery, exporters, CLI behavior, or this skill:
+Run all checks after changing parsing, models, discovery, exporters, CLI behavior, or this skill.
+
+PowerShell:
+
+```powershell
+python -m ruff check .
+python -m ruff format --check antismash_review tests
+python -m mypy antismash_review
+$pytestBase = Join-Path $env:TEMP ("antismash-review-pytest-" + [guid]::NewGuid())
+python -m pytest -p no:cacheprovider --basetemp=$pytestBase -q
+python -m pytest -p no:cacheprovider --basetemp=$pytestBase `
+  --cov=antismash_review --cov-report=term-missing -q
+python -m antismash_review --help
+```
+
+POSIX shells:
 
 ```bash
 python -m ruff check .
 python -m ruff format --check antismash_review tests
 python -m mypy antismash_review
-python -m pytest -p no:cacheprovider --basetemp=.pytest_temp -q
-python -m pytest -p no:cacheprovider --basetemp=.pytest_temp --cov=antismash_review --cov-report=term-missing -q
+pytestBase="$(mktemp -d -t antismash-review-pytest-XXXXXX)"
+python -m pytest -p no:cacheprovider --basetemp="$pytestBase" -q
+python -m pytest -p no:cacheprovider --basetemp="$pytestBase" \
+  --cov=antismash_review --cov-report=term-missing -q
 python -m antismash_review --help
 ```
 

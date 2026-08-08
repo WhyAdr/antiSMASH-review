@@ -5,8 +5,9 @@ This document records the post-refactor audit of commit `cc68c88` against
 substantial and mostly functional, but it is not ready for final sign-off: three behavioral
 defects, a coverage shortfall, and documentation drift remain.
 
-The snippets below are implementation-ready guidance. They have not been applied to the
-package code.
+The snippets below were implementation guidance for commit `c7c2710`. The three principal
+behavioral fixes were applied and verified; remaining scalar-validation and release work is
+tracked in [`4th-fix.md`](4th-fix.md).
 
 ## Audit outcome
 

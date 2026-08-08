@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -28,6 +29,76 @@ from antismash_review.models import (
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def _minimal_clusterblast_json_document() -> dict[str, Any]:
+    return {
+        "records": [
+            {
+                "id": "contig_1",
+                "modules": {
+                    "antismash.modules.clusterblast": {
+                        "schema_version": 2,
+                        "record_id": "contig_1",
+                        "general": {
+                            "schema_version": 5,
+                            "results": [
+                                {
+                                    "region_number": 1,
+                                    "total_hits": 1,
+                                    "ranking": [
+                                        [
+                                            {
+                                                "accession": "ACC1",
+                                                "description": "description",
+                                                "cluster_type": "NRPS",
+                                            },
+                                            {
+                                                "hits": 1,
+                                                "core_gene_hits": 0,
+                                                "blast_score": 5.0,
+                                                "synteny_score": 1,
+                                                "core_bonus": 0,
+                                                "similarity": 50,
+                                                "pairings": [
+                                                    [
+                                                        "input|c1|1-100|+|QUERY|NRPS",
+                                                        0,
+                                                        {
+                                                            "name": "subject",
+                                                            "perc_ident": 90.0,
+                                                            "blastscore": 100.0,
+                                                            "perc_coverage": 95.0,
+                                                            "evalue": 1e-20,
+                                                            "locus_tag": "SUBJECT_1",
+                                                        },
+                                                    ]
+                                                ],
+                                            },
+                                        ]
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                },
+            }
+        ]
+    }
+
+
+def _minimal_clusterblast_result(document: dict[str, Any]) -> dict[str, Any]:
+    return document["records"][0]["modules"]["antismash.modules.clusterblast"]["general"][
+        "results"
+    ][0]
+
+
+def _minimal_clusterblast_hit(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    return _minimal_clusterblast_result(document)["ranking"][0]
+
+
+def _minimal_clusterblast_pairing(document: dict[str, Any]) -> list[Any]:
+    return _minimal_clusterblast_hit(document)[1]["pairings"][0]
 
 
 def _minimal_record(record_id: str = "contig_1", **kwargs: object) -> Record:
@@ -278,6 +349,201 @@ def test_parse_clusterblast_json_schema_validation(tmp_path: Path) -> None:
         ClusterBlastParseError, match="Unsupported ClusterBlast module schema version"
     ):
         parse_clusterblast_json(json_file)
+
+
+def test_json_clusterblast_requires_containing_record_id(tmp_path: Path) -> None:
+    document = _minimal_clusterblast_json_document()
+    del document["records"][0]["id"]
+    path = tmp_path / "missing_record_id.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="containing record id"):
+        parse_clusterblast_json(path)
+
+
+@pytest.mark.parametrize("value", [True, False, "1", 1.0, None, 0])
+def test_json_clusterblast_rejects_invalid_region_number(
+    tmp_path: Path,
+    value: object,
+) -> None:
+    document = _minimal_clusterblast_json_document()
+    _minimal_clusterblast_result(document)["region_number"] = value
+    path = tmp_path / "bad_region.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="region_number"):
+        parse_clusterblast_json(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("total_hits", "ten"),
+        ("hits", "one"),
+        ("core_gene_hits", True),
+        ("synteny_score", 1.5),
+        ("core_bonus", "zero"),
+        ("similarity", False),
+    ],
+)
+def test_json_clusterblast_rejects_invalid_integer_fields(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    document = _minimal_clusterblast_json_document()
+    if field == "total_hits":
+        _minimal_clusterblast_result(document)[field] = value
+    else:
+        _minimal_clusterblast_hit(document)[1][field] = value
+    path = tmp_path / f"bad_{field}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="ClusterBlast"):
+        parse_clusterblast_json(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("module_record_id", None),
+        ("hit_accession", 1),
+        ("hit_description", None),
+        ("pairing_name", 1),
+    ],
+)
+def test_json_clusterblast_rejects_invalid_required_strings(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    document = _minimal_clusterblast_json_document()
+    if field == "module_record_id":
+        document["records"][0]["modules"]["antismash.modules.clusterblast"]["record_id"] = value
+    elif field == "hit_accession":
+        _minimal_clusterblast_hit(document)[0]["accession"] = value
+    elif field == "hit_description":
+        _minimal_clusterblast_hit(document)[0]["description"] = value
+    else:
+        _minimal_clusterblast_pairing(document)[2]["name"] = value
+    path = tmp_path / f"bad_{field}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="string"):
+        parse_clusterblast_json(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cluster_type", 1),
+        ("locus_tag", False),
+    ],
+)
+def test_json_clusterblast_rejects_invalid_optional_strings(
+    tmp_path: Path,
+    field: str,
+    value: object,
+) -> None:
+    document = _minimal_clusterblast_json_document()
+    if field == "cluster_type":
+        _minimal_clusterblast_hit(document)[0][field] = value
+    else:
+        _minimal_clusterblast_pairing(document)[2][field] = value
+    path = tmp_path / f"bad_{field}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="string"):
+        parse_clusterblast_json(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("blast_score", float("nan")),
+        ("perc_ident", float("inf")),
+        ("blastscore", float("-inf")),
+        ("perc_coverage", float("nan")),
+        ("evalue", float("inf")),
+    ],
+)
+def test_json_clusterblast_rejects_nonfinite_float_fields(
+    tmp_path: Path,
+    field: str,
+    value: float,
+) -> None:
+    document = _minimal_clusterblast_json_document()
+    if field == "blast_score":
+        _minimal_clusterblast_hit(document)[1][field] = value
+    else:
+        _minimal_clusterblast_pairing(document)[2][field] = value
+    path = tmp_path / f"bad_{field}.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="not finite"):
+        parse_clusterblast_json(path)
+
+
+def test_json_clusterblast_rejects_overflowing_float(tmp_path: Path) -> None:
+    document = _minimal_clusterblast_json_document()
+    _minimal_clusterblast_pairing(document)[2]["perc_ident"] = 10**1000
+    path = tmp_path / "overflowing_float.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="not finite"):
+        parse_clusterblast_json(path)
+
+
+def test_json_clusterblast_accepts_optional_none_values(tmp_path: Path) -> None:
+    document = _minimal_clusterblast_json_document()
+    result = _minimal_clusterblast_result(document)
+    hit = _minimal_clusterblast_hit(document)[1]
+    pairing = _minimal_clusterblast_pairing(document)[2]
+    result["total_hits"] = None
+    for field in ("cluster_type",):
+        _minimal_clusterblast_hit(document)[0][field] = None
+    for field in (
+        "hits",
+        "core_gene_hits",
+        "blast_score",
+        "synteny_score",
+        "core_bonus",
+        "similarity",
+    ):
+        hit[field] = None
+    pairing["locus_tag"] = None
+    _minimal_clusterblast_pairing(document)[1] = None
+    path = tmp_path / "optional_none.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    results = parse_clusterblast_json(path)
+    parsed_hit = results[0].rankings[0]
+    parsed_pairing = parsed_hit.pairings[0]
+    assert results[0].total_hits is None
+    assert parsed_hit.cluster_type is None
+    assert parsed_hit.blast_score is None
+    assert parsed_pairing.subject_protein_id is None
+    assert parsed_pairing.subject_index is None
+
+
+def test_json_clusterblast_rejects_subject_index_coercion(tmp_path: Path) -> None:
+    document = _minimal_clusterblast_json_document()
+    _minimal_clusterblast_pairing(document)[1] = "zero"
+    path = tmp_path / "bad_subject_index.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="subject_index"):
+        parse_clusterblast_json(path)
+
+
+def test_json_clusterblast_rejects_empty_query_gene(tmp_path: Path) -> None:
+    document = _minimal_clusterblast_json_document()
+    _minimal_clusterblast_pairing(document)[0] = "input|c1|1-100|+||NRPS"
+    path = tmp_path / "bad_query_gene.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ClusterBlastParseError, match="Malformed query string"):
+        parse_clusterblast_json(path)
 
 
 def test_merge_clusterblast_precedence_per_key() -> None:

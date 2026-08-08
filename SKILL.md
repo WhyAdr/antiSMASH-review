@@ -34,6 +34,8 @@ Use the packaged `inspect` and `compare` commands for analysis and the Python mo
    python -m antismash_review compare ref.gb alt.gb --match-by coordinate_overlap --assume-shared-coordinate-system
    ```
 
+   Supported record matching modes: `record_id` (default), `record_region`, `single_record`, and `coordinate_overlap` (requires `--assume-shared-coordinate-system` and `--min-reciprocal-overlap`). Use coordinate matching only when coordinate correspondence is independently established (e.g. re-annotations of identical contigs), not between arbitrary isolates or rebased region files.
+
 4. Use `--lenient` only to retain records when a recognized feature or sidecar cannot be adapted. It does not repair malformed GenBank or switch parsers. Report every emitted diagnostic.
 
 5. Read [references/semantic-contract.md](references/semantic-contract.md) before interpreting hierarchy, domain/module counts, motifs, boundary status, Pfam totals, ClusterBlast results, or coordinate matching.
@@ -75,8 +77,8 @@ Run all checks after changing parsing, models, discovery, exporters, CLI behavio
 python -m ruff check .
 python -m ruff format --check antismash_review tests
 python -m mypy antismash_review
-python -m pytest -q
-python -m pytest --cov=antismash_review --cov-report=term-missing
+python -m pytest -p no:cacheprovider --basetemp=.pytest_temp -q
+python -m pytest -p no:cacheprovider --basetemp=.pytest_temp --cov=antismash_review --cov-report=term-missing -q
 python -m antismash_review --help
 ```
 

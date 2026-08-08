@@ -39,6 +39,7 @@
 | `domain_id_duplicated` | WARNING | A domain_id appears more than once across aSDomain features | Does not determine which instance is canonical |
 | `orphan_module_locus` | WARNING | An aSModule references locus tags absent from the CDS set | Does not prove the module is misannotated; the CDS may have been filtered |
 | `missing_nrps_pks_architecture` | WARNING | Region products contain NRPS/PKS terms but no aSTool=nrps_pks_domains domains were parsed | Does not prove the annotation is wrong; the relevant domains may be in a different record |
+| `clusterblast_parse_failed` | WARNING (lenient) | A recognized ClusterBlast text or JSON sidecar could not be parsed or attached safely | Does not repair or silently discard the malformed sidecar; strict mode fails instead |
 
 Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated Pfam totals already expose the underlying representation.
 
@@ -57,15 +58,19 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
 - Parse native antiSMASH JSON `antismash.modules.clusterblast` modules validating module schema `2` and result schema `5`.
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
+- Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.
 - In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors emit a `clusterblast_parse_failed` diagnostic.
+- Retain `misc_feature` entries only as raw GenBank evidence; do not infer that they are ClusterBlast results.
 
 ## Comparative review
 
 - Compare two antiSMASH runs or files with `compare <left> <right>`.
-- Supported matching modes:
+- Supported record matching modes:
   - `record_id` (default): Exact record ID matching; requires unique IDs on each side.
   - `record_region`: Key by `(record_id, region_number)`; valid only when every record contains exactly one numbered region.
   - `single_record`: Explicit user-requested pairing of single-record inputs with differing IDs.
   - `coordinate_overlap`: Match records by reciprocal overlap of feature spans. Requires explicit `--assume-shared-coordinate-system` and a reciprocal overlap fraction in `(0, 1]` (default 0.80).
+- The coordinate assumption is appropriate only when coordinate correspondence has been independently established, such as re-annotations of the same contigs. It does not establish sequence homology between arbitrary isolates.
+- antiSMASH region GBKs commonly rebase extracted regions to coordinate zero. Such files do not automatically share their original chromosome coordinate system and must not use coordinate matching solely because they came from the same run.
 - Comparison evaluates product gains/losses with multiset counts, new/resolved diagnostics, feature counts delta, and intergenic distance summaries (including circular topology wrap gaps).
 - Comparative JSON exports `schema_name: "antismash-review-comparison"` with `schema_version: "0.1.0"`.

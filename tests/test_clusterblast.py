@@ -506,3 +506,166 @@ def test_cli_lenient_clusterblast_diagnostic(tmp_path: Path, capsys: object) -> 
     doc = json.loads(captured_lenient.out)
     diag_codes = [d["code"] for d in doc["diagnostics"]]
     assert "clusterblast_parse_failed" in diag_codes
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        [],
+        {"schema_version": 5, "results": [{}]},
+        {"schema_version": 5, "results": "not-a-list"},
+        {"schema_version": 99, "results": []},
+        {"schema_version": 5, "results": [{"region_number": "not_an_int"}]},
+        {"schema_version": 5, "results": [{"region_number": 1, "ranking": "not_a_list"}]},
+        {
+            "schema_version": 5,
+            "results": [
+                {
+                    "region_number": 1,
+                    "ranking": [
+                        [{"accession": "A", "description": "D"}, {"pairings": "not_a_list"}]
+                    ],
+                }
+            ],
+        },
+        {
+            "schema_version": 5,
+            "results": [
+                {
+                    "region_number": 1,
+                    "ranking": [
+                        [{"accession": "A", "description": "D"}, {"pairings": [["short|q", 0, {}]]}]
+                    ],
+                }
+            ],
+        },
+    ],
+)
+def test_parse_clusterblast_json_malformed_shapes_use_public_error(
+    tmp_path: Path,
+    section: object,
+) -> None:
+    path = tmp_path / "malformed.json"
+    path.write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "id": "contig_1",
+                        "modules": {
+                            "antismash.modules.clusterblast": {
+                                "schema_version": 2,
+                                "record_id": "contig_1",
+                                "general": section,
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ClusterBlastParseError):
+        parse_clusterblast_json(path)
+
+
+def test_parse_clusterblast_json_record_id_mismatch_and_missing_module(tmp_path: Path) -> None:
+    # No clusterblast module -> returns empty list
+    path1 = tmp_path / "no_cb.json"
+    path1.write_text(json.dumps({"records": [{"id": "contig_1", "modules": {}}]}), encoding="utf-8")
+    assert parse_clusterblast_json(path1) == []
+
+    # Record id mismatch raises error
+    path2 = tmp_path / "mismatch.json"
+    path2.write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "id": "contig_1",
+                        "modules": {
+                            "antismash.modules.clusterblast": {
+                                "schema_version": 2,
+                                "record_id": "different_id",
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ClusterBlastParseError, match="does not match"):
+        parse_clusterblast_json(path2)
+
+
+def test_parse_clusterblast_json_all_three_search_types(tmp_path: Path) -> None:
+    path = tmp_path / "all_types.json"
+    path.write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "id": "contig_1",
+                        "modules": {
+                            "antismash.modules.clusterblast": {
+                                "schema_version": 2,
+                                "record_id": "contig_1",
+                                "general": {"schema_version": 5, "results": [{"region_number": 1}]},
+                                "knowncluster": {
+                                    "schema_version": 5,
+                                    "results": [{"region_number": 1}],
+                                },
+                                "subcluster": {
+                                    "schema_version": 5,
+                                    "results": [{"region_number": 1}],
+                                },
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    res = parse_clusterblast_json(path)
+    assert len(res) == 3
+    types = {r.search_type for r in res}
+    assert types == {"clusterblast", "knownclusterblast", "subclusterblast"}
+
+
+def test_cli_lenient_clusterblast_json_failure_is_diagnostic(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    shutil.copy(FIXTURES / "semantics.gb", tmp_path / "semantics.gb")
+    (tmp_path / "semantics.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "id": "SEMANTICS.1",
+                        "modules": {
+                            "antismash.modules.clusterblast": {
+                                "schema_version": 2,
+                                "record_id": "SEMANTICS.1",
+                                "general": {"schema_version": 5, "results": [{}]},
+                            }
+                        },
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["inspect", str(tmp_path)]) == 2
+    capsys.readouterr()  # type: ignore[union-attr]
+
+    assert main(["inspect", str(tmp_path), "--lenient", "--format", "json"]) == 0
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    document = json.loads(captured.out)
+    assert "clusterblast_parse_failed" in {
+        diagnostic["code"] for diagnostic in document["diagnostics"]
+    }

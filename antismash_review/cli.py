@@ -78,19 +78,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_review_records(
+def load_review_records(
     manifest: InputManifest,
     *,
     lenient: bool,
 ) -> tuple[list[Record], set[Path]]:
     paths = manifest.aggregate_genbanks or manifest.region_genbanks
     all_inputs = (
-        set(paths)
+        set(manifest.aggregate_genbanks)
+        | set(manifest.region_genbanks)
         | set(manifest.json_files)
         | set(manifest.clusterblast_files)
         | set(manifest.knownclusterblast_files)
         | set(manifest.subclusterblast_files)
     )
+
     if not paths:
         if manifest.json_files:
             message = (
@@ -136,6 +138,9 @@ def _load_review_records(
     return records, all_inputs
 
 
+_load_review_records = load_review_records
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -161,8 +166,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
 
         try:
-            left_records, left_inputs = _load_review_records(left_manifest, lenient=args.lenient)
-            right_records, right_inputs = _load_review_records(right_manifest, lenient=args.lenient)
+            left_records, left_inputs = load_review_records(left_manifest, lenient=args.lenient)
+            right_records, right_inputs = load_review_records(right_manifest, lenient=args.lenient)
         except (GenBankParseError, ClusterBlastParseError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
@@ -208,7 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        records, all_inputs = _load_review_records(manifest, lenient=args.lenient)
+        records, all_inputs = load_review_records(manifest, lenient=args.lenient)
     except (GenBankParseError, ClusterBlastParseError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

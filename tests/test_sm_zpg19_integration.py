@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from antismash_review.cli import main
+from antismash_review.cli import load_review_records, main
 from antismash_review.clusterblast import (
     attach_clusterblast_results,
     merge_clusterblast_results,
@@ -14,6 +14,57 @@ from antismash_review.clusterblast import (
 )
 from antismash_review.discovery import discover
 from antismash_review.genbank import parse_genbank
+
+
+def test_sm_zpg19_directory_loader_attaches_exactly_30_results(
+    sm_zpg19_dir: Path,
+) -> None:
+    manifest = discover(sm_zpg19_dir)
+    records, _ = load_review_records(manifest, lenient=False)
+
+    assert len(records) == 1
+    assert len(records[0].clusterblast_results) == 30
+    assert all(result.source_format == "text" for result in records[0].clusterblast_results)
+    assert (
+        len(
+            {
+                (result.record_id, result.region_number, result.search_type)
+                for result in records[0].clusterblast_results
+            }
+        )
+        == 30
+    )
+
+
+def test_sm_zpg19_region_only_attachment(sm_zpg19_dir: Path) -> None:
+    manifest = discover(sm_zpg19_dir)
+    assert len(manifest.region_genbanks) == 10
+    region_records = [rec for p in manifest.region_genbanks for rec in parse_genbank(p)]
+    assert len(region_records) == 10
+
+    text_results = (
+        [
+            parse_clusterblast_text(p, search_type="clusterblast")
+            for p in manifest.clusterblast_files
+        ]
+        + [
+            parse_clusterblast_text(p, search_type="knownclusterblast")
+            for p in manifest.knownclusterblast_files
+        ]
+        + [
+            parse_clusterblast_text(p, search_type="subclusterblast")
+            for p in manifest.subclusterblast_files
+        ]
+    )
+    json_path = sm_zpg19_dir / "SM-ZPG19_antismash.json"
+    json_results = parse_clusterblast_json(json_path) if json_path.exists() else []
+    merged = merge_clusterblast_results(text_results, json_results)
+    attach_clusterblast_results(region_records, merged)
+
+    for rec in region_records:
+        assert len(rec.clusterblast_results) == 3
+        types = {r.search_type for r in rec.clusterblast_results}
+        assert types == {"clusterblast", "knownclusterblast", "subclusterblast"}
 
 
 def test_sm_zpg19_genbank_baseline(sm_zpg19_dir: Path) -> None:

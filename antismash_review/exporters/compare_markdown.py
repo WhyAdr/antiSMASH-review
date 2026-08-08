@@ -31,7 +31,7 @@ def render_comparison(result: ComparisonResult) -> str:
         "",
         f"- Left input: `{result.left_input}`",
         f"- Right input: `{result.right_input}`",
-        f"- Match method: `{result.match_method}`",
+        f"- Record matching mode: `{result.match_method}`",
     ]
 
     if result.match_method == "coordinate_overlap":

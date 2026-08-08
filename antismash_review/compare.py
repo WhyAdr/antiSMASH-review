@@ -314,21 +314,22 @@ def compare_records(
             raise ValueError("min_reciprocal_overlap must be in the interval (0, 1]")
 
         # Find candidates for each left record
-        candidates_for_left: dict[str, list[tuple[Record, CoordinateMatchEvidence]]] = {}
+        candidates_for_left: list[
+            tuple[Record, list[tuple[int, Record, CoordinateMatchEvidence]]]
+        ] = []
         for left in left_records:
-            candidates: list[tuple[Record, CoordinateMatchEvidence]] = []
-            for right in right_records:
+            candidates: list[tuple[int, Record, CoordinateMatchEvidence]] = []
+            for right_index, right in enumerate(right_records):
                 evidence = _calculate_overlap_evidence(left, right)
                 if (
                     evidence.left_overlap_fraction >= min_reciprocal_overlap
                     and evidence.right_overlap_fraction >= min_reciprocal_overlap
                 ):
-                    candidates.append((right, evidence))
-            candidates_for_left[left.record_id] = candidates
+                    candidates.append((right_index, right, evidence))
+            candidates_for_left.append((left, candidates))
 
-        matched_right_records: dict[str, str] = {}  # right_id -> left_id
-        for left in left_records:
-            cand_list = candidates_for_left[left.record_id]
+        matched_right_records: dict[int, str] = {}  # right_index -> left_id
+        for left, cand_list in candidates_for_left:
             if len(cand_list) == 0:
                 unmatched_left.append(left.record_id)
             elif len(cand_list) > 1:
@@ -337,14 +338,14 @@ def compare_records(
                     f"{len(cand_list)} right records above threshold {min_reciprocal_overlap}"
                 )
             else:
-                right, evidence = cand_list[0]
-                if right.record_id in matched_right_records:
-                    prev_left = matched_right_records[right.record_id]
+                right_index, right, evidence = cand_list[0]
+                if right_index in matched_right_records:
+                    prev_left = matched_right_records[right_index]
                     raise ValueError(
                         f"Non-one-to-one coordinate match: right record {right.record_id} matched "
                         f"by both {prev_left} and {left.record_id}"
                     )
-                matched_right_records[right.record_id] = left.record_id
+                matched_right_records[right_index] = left.record_id
                 match_str = (
                     f"{left.record_id} <-> {right.record_id} (overlap {evidence.overlap_bp} bp)"
                 )
@@ -352,9 +353,9 @@ def compare_records(
                     _compare_single_pair(left, right, match_key=match_str, evidence=evidence)
                 )
 
-        matched_right_set = set(matched_right_records.keys())
-        for right in right_records:
-            if right.record_id not in matched_right_set:
+        matched_right_set = set(matched_right_records)
+        for right_index, right in enumerate(right_records):
+            if right_index not in matched_right_set:
                 unmatched_right.append(right.record_id)
 
     else:

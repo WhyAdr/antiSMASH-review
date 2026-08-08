@@ -263,6 +263,145 @@ def test_compare_coordinate_overlap_below_threshold_and_ambiguity() -> None:
     assert result.unmatched_right == ["RIGHT"]
 
 
+def test_coordinate_overlap_allows_repeated_display_ids() -> None:
+    left_a = _minimal_record("REPEATED")
+    left_a.genes.append(_make_gene("LA", 0, 100))
+    left_b = _minimal_record("REPEATED")
+    left_b.genes.append(_make_gene("LB", 200, 300))
+
+    right_a = _minimal_record("RIGHT")
+    right_a.genes.append(_make_gene("RA", 0, 100))
+    right_b = _minimal_record("RIGHT")
+    right_b.genes.append(_make_gene("RB", 200, 300))
+
+    result = compare_records(
+        [left_a, left_b],
+        [right_a, right_b],
+        left_input=Path("left.gb"),
+        right_input=Path("right.gb"),
+        match_method="coordinate_overlap",
+        assume_shared_coordinate_system=True,
+    )
+
+    assert len(result.matched) == 2
+    assert result.unmatched_left == []
+    assert result.unmatched_right == []
+    evidence = [item.coordinate_evidence for item in result.matched]
+    assert all(item is not None for item in evidence)
+    assert [item.overlap_bp for item in evidence if item is not None] == [100, 100]
+
+
+def test_coordinate_overlap_rejects_equal_candidate_tie() -> None:
+    left = _minimal_record("LEFT")
+    left.genes.append(_make_gene("L", 0, 100))
+    right_a = _minimal_record("RIGHT_A")
+    right_a.genes.append(_make_gene("RA", 0, 100))
+    right_b = _minimal_record("RIGHT_B")
+    right_b.genes.append(_make_gene("RB", 0, 100))
+
+    with pytest.raises(ValueError, match="Ambiguous coordinate match"):
+        compare_records(
+            [left],
+            [right_a, right_b],
+            left_input=Path("left.gb"),
+            right_input=Path("right.gb"),
+            match_method="coordinate_overlap",
+            assume_shared_coordinate_system=True,
+        )
+
+
+def test_coordinate_overlap_rejects_multiple_left_to_one_right() -> None:
+    left_a = _minimal_record("LEFT_A")
+    left_a.genes.append(_make_gene("LA", 0, 100))
+    left_b = _minimal_record("LEFT_B")
+    left_b.genes.append(_make_gene("LB", 0, 100))
+    right = _minimal_record("RIGHT")
+    right.genes.append(_make_gene("R", 0, 100))
+
+    with pytest.raises(ValueError, match="Non-one-to-one coordinate match"):
+        compare_records(
+            [left_a, left_b],
+            [right],
+            left_input=Path("left.gb"),
+            right_input=Path("right.gb"),
+            match_method="coordinate_overlap",
+            assume_shared_coordinate_system=True,
+        )
+
+
+@pytest.mark.parametrize("match_method", ["record_id", "record_region", "single_record"])
+def test_assumption_flag_rejected_for_every_non_coordinate_mode(
+    match_method: str,
+) -> None:
+    sem = FIXTURES / "semantics.gb"
+    with pytest.raises(SystemExit) as exc:
+        main(
+            [
+                "compare",
+                str(sem),
+                str(sem),
+                "--match-by",
+                match_method,
+                "--assume-shared-coordinate-system",
+            ]
+        )
+    assert exc.value.code == 2
+
+
+def test_intergenic_summary_handles_cross_origin_cds() -> None:
+    record = parse_genbank(FIXTURES / "cross-origin.gb")[0]
+    summary = intergenic_summary(record)
+    assert summary.circular_wrap_included
+    assert summary.gap_count == 1
+    assert summary.total_bp == 60
+
+
+def test_compare_record_id_right_duplicate_rejected() -> None:
+    rec1 = _minimal_record("REC1")
+    rec2a = _minimal_record("REC1")
+    rec2b = _minimal_record("REC1")
+    with pytest.raises(ValueError, match="Duplicate record ID found on right"):
+        compare_records([rec1], [rec2a, rec2b], left_input=Path("l.gb"), right_input=Path("r.gb"))
+
+
+def test_compare_single_record_empty_rejected() -> None:
+    with pytest.raises(ValueError, match="single_record matching requires exactly one record"):
+        compare_records(
+            [],
+            [_minimal_record("R")],
+            left_input=Path("l.gb"),
+            right_input=Path("r.gb"),
+            match_method="single_record",
+        )
+
+
+def test_compare_record_region_missing_number_rejected() -> None:
+    rec1 = _minimal_record("REC1")
+    rec2 = _minimal_record("REC2")
+    rec2.regions.append(_make_region(1, 0, 500, ["p"]))
+    with pytest.raises(ValueError, match="does not contain exactly one numbered region"):
+        compare_records(
+            [rec1],
+            [rec2],
+            left_input=Path("l.gb"),
+            right_input=Path("r.gb"),
+            match_method="record_region",
+        )
+
+
+def test_compare_unknown_match_method_rejected() -> None:
+    rec1 = _minimal_record("REC1")
+    rec2 = _minimal_record("REC2")
+    with pytest.raises(ValueError, match="Unknown match method"):
+        compare_records(
+            [rec1],
+            [rec2],
+            left_input=Path("l.gb"),
+            right_input=Path("r.gb"),
+            match_method="invalid_mode",
+        )
+
+
 def test_intergenic_summary_linear_and_circular() -> None:
     # Linear with two non-overlapping genes: (0, 10) and (20, 30) -> gap is 10 bp
     rec_lin = _minimal_record("LIN", length=100, topology="linear")
@@ -378,6 +517,23 @@ def test_cli_compare_overwrite_protection(tmp_path: Path, capsys: object) -> Non
     captured = capsys.readouterr()  # type: ignore[union-attr]
     assert "refusing to overwrite input file" in captured.err
 
+    assert main(["compare", str(src_l), str(src_r), "--output", str(src_r)]) == 2
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "refusing to overwrite input file" in captured.err
+
+    # Unselected region GenBank in a directory input is also protected
+    left_dir = tmp_path / "left_dir"
+    left_dir.mkdir()
+    shutil.copy(FIXTURES / "semantics.gb", left_dir / "sample.gbk")
+    region_file = left_dir / "sample.region001.gbk"
+    shutil.copy(FIXTURES / "semantics.gb", region_file)
+    original_region = region_file.read_bytes()
+
+    assert main(["compare", str(left_dir), str(src_r), "--output", str(region_file)]) == 2
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "refusing to overwrite input file" in captured.err
+    assert region_file.read_bytes() == original_region
+
 
 def test_cli_compare_to_output_file(tmp_path: Path) -> None:
     sem = FIXTURES / "semantics.gb"
@@ -417,3 +573,47 @@ def test_compare_markdown_full_features_and_unmatched() -> None:
     assert "- `EXTRA_LEFT`" in md
     assert "## Unmatched right records" in md
     assert "- `EXTRA_RIGHT`" in md
+
+
+def test_compare_markdown_single_record_and_diagnostics() -> None:
+    rec1 = _minimal_record("REC1")
+    rec2 = _minimal_record("REC2")
+
+    result = compare_records(
+        [rec1],
+        [rec2],
+        left_input=Path("left.gb"),
+        right_input=Path("right.gb"),
+        match_method="single_record",
+    )
+    md = render_comparison(result)
+    assert "- Note: single_record is an explicit user-requested pairing" in md
+
+
+def test_compare_cli_format_json_and_errors(tmp_path: Path, capsys: object) -> None:
+    sem = FIXTURES / "semantics.gb"
+
+    # compare --format json
+    assert main(["compare", str(sem), str(sem), "--format", "json"]) == 0
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    doc = json.loads(captured.out)
+    assert doc["schema_name"] == "antismash-review-comparison"
+
+    # Nonexistent file returns status 2
+    assert main(["compare", "/nonexistent/left.gb", str(sem)]) == 2
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "error:" in captured.err
+
+    # Corrupt file returns status 2
+    bad = tmp_path / "bad.gb"
+    bad.write_text("NOT A GENBANK", encoding="utf-8")
+    assert main(["compare", str(bad), str(sem)]) == 2
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "error:" in captured.err
+
+
+def test_compare_json_encoder_default_error() -> None:
+    from antismash_review.exporters.compare_json import _json_default
+
+    with pytest.raises(TypeError):
+        _json_default(object())

@@ -44,6 +44,22 @@ def test_cli_refuses_to_overwrite_input(tmp_path: Path, capsys: object) -> None:
     assert source.read_bytes() == original
 
 
+def test_cli_refuses_to_overwrite_unselected_region_genbank(
+    tmp_path: Path,
+    capsys: object,
+) -> None:
+    aggregate = tmp_path / "sample.gbk"
+    region = tmp_path / "sample.region001.gbk"
+    shutil.copy(FIXTURE, aggregate)
+    shutil.copy(FIXTURE, region)
+    original = region.read_bytes()
+
+    assert main(["inspect", str(tmp_path), "--output", str(region)]) == 2
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "refusing to overwrite input file" in captured.err
+    assert region.read_bytes() == original
+
+
 def test_cli_reports_output_write_failure(tmp_path: Path, capsys: object) -> None:
     output = tmp_path / "missing" / "review.md"
     assert main(["inspect", str(FIXTURE), "--output", str(output)]) == 2
@@ -91,3 +107,26 @@ def test_cli_json_only_directory_rejects(tmp_path: Path, capsys: object) -> None
     captured = capsys.readouterr()  # type: ignore[union-attr]
     assert result == 2
     assert "native antiSMASH JSON" in captured.err or "no GenBank" in captured.err
+
+
+def test_cli_empty_directory_rejects(tmp_path: Path, capsys: object) -> None:
+    """An empty directory returns status 2 with no GenBank input found."""
+    empty = tmp_path / "empty_dir"
+    empty.mkdir()
+    result = main(["inspect", str(empty)])
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert result == 2
+    assert "no GenBank input found" in captured.err
+
+
+def test_cli_inspect_clusterblast_tsv(capsys: object) -> None:
+    assert main(["inspect", str(FIXTURE), "--format", "clusterblast-tsv"]) == 0
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert "record_id\tregion_number\tsearch_type" in captured.out
+
+
+def test_json_export_encoder_default_error() -> None:
+    from antismash_review.exporters.json_export import _json_default
+
+    with pytest.raises(TypeError):
+        _json_default(object())

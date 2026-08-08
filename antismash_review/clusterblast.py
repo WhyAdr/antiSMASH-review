@@ -217,7 +217,7 @@ def parse_clusterblast_text(
     )
 
 
-def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
+def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
     """Parse only ClusterBlast modules from a native antiSMASH JSON sidecar."""
     path = Path(path)
     try:
@@ -229,6 +229,10 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
     if not isinstance(data, dict) or "records" not in data:
         raise ClusterBlastParseError(f"Invalid antiSMASH JSON root in {path}")
 
+    raw_records = data["records"]
+    if not isinstance(raw_records, list):
+        raise ClusterBlastParseError(f"antiSMASH JSON records is not a list in {path}")
+
     source_sha256 = _sha256(path)
     results: list[ClusterBlastResult] = []
 
@@ -238,9 +242,17 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
         ("subcluster", "subclusterblast"),
     )
 
-    for record_idx, rec in enumerate(data.get("records", [])):
+    for record_idx, rec in enumerate(raw_records):
+        if not isinstance(rec, dict):
+            raise ClusterBlastParseError(
+                f"antiSMASH JSON record {record_idx} is not an object in {path}"
+            )
         rec_id = rec.get("id")
         modules = rec.get("modules", {})
+        if not isinstance(modules, dict):
+            raise ClusterBlastParseError(
+                f"antiSMASH JSON modules for record {record_idx} is not an object in {path}"
+            )
         if "antismash.modules.clusterblast" not in modules:
             continue
 
@@ -273,7 +285,9 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
                 continue
             section = cb_mod[sec_key]
             if not isinstance(section, dict):
-                continue
+                raise ClusterBlastParseError(
+                    f"ClusterBlast {sec_key} section is not an object in {path}"
+                )
 
             result_schema_version = section.get("schema_version")
             if result_schema_version != 5:
@@ -282,10 +296,30 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
                     f"{result_schema_version!r} (expected 5) in {path}"
                 )
 
-            for region_res in section.get("results", []):
+            raw_results = section.get("results")
+            if not isinstance(raw_results, list):
+                raise ClusterBlastParseError(
+                    f"ClusterBlast {sec_key} results is not a list in {path}"
+                )
+
+            for region_res in raw_results:
+                if not isinstance(region_res, dict):
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast {sec_key} region result is not an object in {path}"
+                    )
+                if "region_number" not in region_res:
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast region result missing region_number in {path}"
+                    )
                 region_number = region_res["region_number"]
+                if not isinstance(region_number, int):
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast region_number is not an integer in {path}"
+                    )
                 total_hits = region_res.get("total_hits")
                 raw_rankings = region_res.get("ranking", [])
+                if not isinstance(raw_rankings, list):
+                    raise ClusterBlastParseError(f"ClusterBlast ranking is not a list in {path}")
 
                 rankings: list[ClusterBlastHit] = []
                 for rank_idx, rank_entry in enumerate(raw_rankings, start=1):
@@ -300,18 +334,31 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
                         )
 
                     pairings: list[ClusterBlastPairing] = []
-                    for pairing_entry in hit_details.get("pairings", []):
+                    raw_pairings = hit_details.get("pairings", [])
+                    if not isinstance(raw_pairings, list):
+                        raise ClusterBlastParseError(
+                            f"ClusterBlast pairings is not a list in {path}"
+                        )
+                    for pairing_entry in raw_pairings:
                         if not isinstance(pairing_entry, (list, tuple)) or len(pairing_entry) != 3:
                             raise ClusterBlastParseError(
                                 f"Invalid pairing entry in {path}: {pairing_entry!r}"
                             )
                         query_str, subject_idx, pairing_dict = pairing_entry
+                        if not isinstance(query_str, str):
+                            raise ClusterBlastParseError(
+                                f"Invalid query string type in {path}: {query_str!r}"
+                            )
                         parts = query_str.split("|", 5)
                         if len(parts) < 5:
                             raise ClusterBlastParseError(
                                 f"Malformed query string in {path}: {query_str!r}"
                             )
                         query_gene = parts[4]
+                        if not isinstance(pairing_dict, dict):
+                            raise ClusterBlastParseError(
+                                f"Invalid pairing dictionary in {path}: {pairing_dict!r}"
+                            )
                         pairings.append(
                             ClusterBlastPairing(
                                 query_gene=query_gene,
@@ -360,6 +407,19 @@ def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
                 )
 
     return results
+
+
+def parse_clusterblast_json(path: Path) -> list[ClusterBlastResult]:
+    """Parse supported ClusterBlast JSON or raise one public enrichment error."""
+    path = Path(path)
+    try:
+        return _parse_clusterblast_json_unchecked(path)
+    except ClusterBlastParseError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise ClusterBlastParseError(
+            f"Malformed ClusterBlast JSON structure in {path}: {exc}"
+        ) from exc
 
 
 def _result_key(

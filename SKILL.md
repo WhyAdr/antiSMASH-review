@@ -40,6 +40,28 @@ Use the packaged `inspect` and `compare` commands for analysis and the Python mo
 
 5. Read [references/semantic-contract.md](references/semantic-contract.md) before interpreting hierarchy, domain/module counts, motifs, boundary status, Pfam totals, ClusterBlast results, or coordinate matching.
 
+## Use the Python API
+
+Import the supported library surface from `antismash_review`:
+
+```python
+from pathlib import Path
+
+from antismash_review import GenBankParseError, dumps_records, parse_genbank, review_record
+
+try:
+    records = parse_genbank(Path("result.gbk"))
+except GenBankParseError as exc:
+    raise RuntimeError(f"Could not review antiSMASH GenBank: {exc}") from exc
+
+diagnostics = [item for record in records for item in review_record(record)]
+json_text = dumps_records(records)
+```
+
+The stable top-level names are listed in `antismash_review.__all__`. `parse_genbank()` accepts one GenBank file, preserves every record, and raises `GenBankParseError` for unreadable, malformed, or empty input. Its default strict mode raises when a recognized feature cannot be adapted; `lenient=True` retains the record and emits an explicit diagnostic for that feature. It does not discover result directories or attach ClusterBlast sidecars; use the CLI for that enriched workflow.
+
+The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()`, `render_gene_tsv()`, `render_domain_tsv()`, and `render_clusterblast_tsv()`. The installed distribution includes `py.typed` so downstream type checkers use the inline annotations.
+
 ## Select inputs deliberately
 
 - Accept `.gbk`, `.gb`, and `.gbff` files.

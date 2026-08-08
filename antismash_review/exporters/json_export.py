@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from antismash_review import __version__
+from antismash_review._version import __version__
 from antismash_review.models import Record
 from antismash_review.review import review_record
 from antismash_review.schema import RECORD_SCHEMA_NAME, RECORD_SCHEMA_VERSION

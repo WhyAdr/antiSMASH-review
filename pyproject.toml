@@ -23,6 +23,9 @@ antismash-review = "antismash_review.cli:main"
 [tool.setuptools.packages.find]
 include = ["antismash_review*"]
 
+[tool.setuptools.package-data]
+antismash_review = ["py.typed"]
+
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = ["tests"]

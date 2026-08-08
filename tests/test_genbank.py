@@ -66,10 +66,10 @@ def test_locations_preserve_parts_fuzziness_and_membership() -> None:
 def test_boundary_review_is_evidence_scoped() -> None:
     record = parse_genbank(ROOT / "semantics.gb")[0]
     diagnostics = review_record(record)
-    assert {item.code for item in diagnostics} == {
-        "context_reaches_record_edge",
-        "core_reaches_record_edge",
-    }
+    codes = {item.code for item in diagnostics}
+    assert "context_reaches_record_edge" in codes
+    assert "core_reaches_record_edge" in codes
+    assert "orphan_module_locus" in codes  # G4 not in CDS set
     assert not any(item.code == "low_confidence_motif" for item in diagnostics)
 
 
@@ -118,3 +118,36 @@ def test_version_comes_only_from_antismash_metadata() -> None:
 def test_missing_source_uses_public_parse_error(tmp_path: Path) -> None:
     with pytest.raises(GenBankParseError, match="Could not parse"):
         parse_genbank(tmp_path / "missing.gbk")
+
+
+def test_empty_genbank_raises_error(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.gb"
+    empty.write_text("", encoding="utf-8")
+    with pytest.raises(GenBankParseError, match="No GenBank records found"):
+        parse_genbank(empty)
+
+
+def test_cross_origin_location_parts_and_membership() -> None:
+    record = parse_genbank(ROOT / "cross-origin.gb")[0]
+    assert record.topology == "circular"
+    gene = record.genes[0]
+    assert gene.locus_tag == "XORIGIN1"
+    assert gene.location.cross_origin
+    assert len(gene.location.parts) == 2
+    # CDS spans origin: parts should cover 80..100 and 0..20
+    part_ranges = [(p.start, p.end) for p in gene.location.parts]
+    assert (80, 100) in part_ranges
+    assert (0, 20) in part_ranges
+    # Gene should still be assigned to its region
+    assert gene.region_numbers == [1]
+
+
+def test_partial_edge_fixture() -> None:
+    record = parse_genbank(ROOT / "partial-edge.gb")[0]
+    gene = record.genes[0]
+    assert gene.locus_tag == "EDGE1"
+    assert gene.location.partial
+    # Fuzzy start at <1 means start is 0, which is a boundary
+    assert gene.location.start == 0
+    diagnostics = review_record(record)
+    assert any(item.code == "partial_cds_at_edge" for item in diagnostics)

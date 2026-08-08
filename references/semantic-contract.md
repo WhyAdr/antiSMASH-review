@@ -27,11 +27,45 @@
 - Diagnose a CDS edge truncation only when its location is fuzzy/partial and reaches the edge.
 - Do not emit a generic motif-confidence warning based on one e-value cutoff.
 
+## Diagnostics reference
+
+| Code | Severity | Trigger | Non-claim |
+|---|---|---|---|
+| `context_reaches_record_edge` | NOTICE | Any region has `contig_edge=True` | Does not prove a core or CDS is truncated |
+| `core_reaches_record_edge` | WARNING | A proto-core location starts at 0 or ends at record length | Does not prove the core gene is incomplete |
+| `partial_cds_at_edge` | WARNING | A CDS with a fuzzy/partial location reaches a record boundary | Does not assess the biological completeness of the protein |
+| `feature_adapter_failed` | WARNING (lenient) / ERROR (strict) | A recognized feature could not be adapted to its typed model | In strict mode, halts parsing |
+| `module_domain_missing` | WARNING | An aSModule references a domain_id absent from the record | Does not assess module completeness |
+| `domain_id_duplicated` | WARNING | A domain_id appears more than once across aSDomain features | Does not determine which instance is canonical |
+| `orphan_module_locus` | WARNING | An aSModule references locus tags absent from the CDS set | Does not prove the module is misannotated; the CDS may have been filtered |
+| `missing_nrps_pks_architecture` | WARNING | Region products contain NRPS/PKS terms but no aSTool=nrps_pks_domains domains were parsed | Does not prove the annotation is wrong; the relevant domains may be in a different record |
+
+Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated Pfam totals already expose the underlying representation.
+
 ## Discovery and exports
 
 - Classify recognized files deterministically as native JSON, aggregate GenBank, or region GenBank.
 - During inspection, consume aggregate GenBank files in preference to region files to avoid duplicate representations.
-- Native antiSMASH JSON discovery exists only for manifest classification; parsing and source merging require future version-specific adapters.
+- Native antiSMASH JSON alone remains unsupported as primary input; when a GenBank input is provided alongside JSON or sidecar text directories, sidecar enrichment parses and attaches ClusterBlast results.
 - Markdown and the top-level JSON diagnostics include evidence-scoped review diagnostics.
-- The JSON envelope reports `schema_name`, `schema_version`, and `parser_version`; it is pre-1.0 and may evolve.
-- TSV is a compact one-row-per-record summary and is not an entity-level export.
+- The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.2.0"`, and `parser_version`.
+- TSV (`--format tsv`) is a compact one-row-per-record summary.
+- Entity-level TSV exports (`--format gene-tsv`, `--format domain-tsv`, and `--format clusterblast-tsv`) export one row per entity. All entity TSV coordinates (`start`, `end`) are the model's zero-based, half-open coordinates `[start, end)` (never silently converted to GenBank one-based display coordinates).
+
+## ClusterBlast sidecar enrichment
+
+- Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
+- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules validating module schema `2` and result schema `5`.
+- Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
+- In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors emit a `clusterblast_parse_failed` diagnostic.
+
+## Comparative review
+
+- Compare two antiSMASH runs or files with `compare <left> <right>`.
+- Supported matching modes:
+  - `record_id` (default): Exact record ID matching; requires unique IDs on each side.
+  - `record_region`: Key by `(record_id, region_number)`; valid only when every record contains exactly one numbered region.
+  - `single_record`: Explicit user-requested pairing of single-record inputs with differing IDs.
+  - `coordinate_overlap`: Match records by reciprocal overlap of feature spans. Requires explicit `--assume-shared-coordinate-system` and a reciprocal overlap fraction in `(0, 1]` (default 0.80).
+- Comparison evaluates product gains/losses with multiset counts, new/resolved diagnostics, feature counts delta, and intergenic distance summaries (including circular topology wrap gaps).
+- Comparative JSON exports `schema_name: "antismash-review-comparison"` with `schema_version: "0.1.0"`.

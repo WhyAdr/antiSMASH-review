@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from antismash_review.discovery import discover
 
 
@@ -31,3 +33,17 @@ def test_region_classification_is_case_insensitive(tmp_path: Path) -> None:
     manifest = discover(path)
     assert manifest.region_genbanks == (path.resolve(),)
     assert not manifest.aggregate_genbanks
+
+
+def test_unsupported_single_file_raises_error(tmp_path: Path) -> None:
+    """A single file with an unsupported extension should raise ValueError."""
+    unsupported = tmp_path / "data.csv"
+    unsupported.write_text("a,b,c", encoding="utf-8")
+    with pytest.raises(ValueError, match="Unsupported input"):
+        discover(unsupported)
+
+
+def test_nonexistent_directory_raises_error() -> None:
+    """A nonexistent directory should raise FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        discover(Path("/nonexistent/antismash/output"))

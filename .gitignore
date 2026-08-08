@@ -12,6 +12,9 @@ build/
 dist/
 *.egg-info/
 
+/.pytest_temp/
+/SM-ZPG19--NOACCESSION-antismash/
+
 # Local antiSMASH integration inputs belong outside the distributable skill.
 /*.gb
 /*.gbk

@@ -3,7 +3,55 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+ClusterBlastSearchType = Literal[
+    "clusterblast",
+    "knownclusterblast",
+    "subclusterblast",
+]
+ClusterBlastSourceFormat = Literal["text", "json"]
+
+
+@dataclass(slots=True, frozen=True)
+class ClusterBlastPairing:
+    query_gene: str
+    subject_gene: str
+    percent_identity: float
+    blast_score: float
+    percent_coverage: float
+    evalue: float
+    subject_protein_id: str | None = None
+    subject_index: int | None = None
+
+
+@dataclass(slots=True)
+class ClusterBlastHit:
+    rank: int
+    accession: str
+    description: str
+    cluster_type: str | None
+    num_hits: int | None
+    core_gene_hits: int | None
+    blast_score: float | None
+    synteny_score: int | None
+    core_bonus: int | None
+    similarity: int | None
+    pairings: list[ClusterBlastPairing] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class ClusterBlastResult:
+    record_id: str
+    region_number: int
+    search_type: ClusterBlastSearchType
+    total_hits: int | None
+    rankings: list[ClusterBlastHit]
+    source_path: Path
+    source_sha256: str
+    source_format: ClusterBlastSourceFormat
+    module_schema_version: int | None = None
+    result_schema_version: int | None = None
 
 
 class Severity(str, Enum):
@@ -210,6 +258,7 @@ class Record:
     pfam_hits: list[PfamHit] = field(default_factory=list)
     raw_features: list[RawFeature] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
+    clusterblast_results: list[ClusterBlastResult] = field(default_factory=list)
 
     @property
     def nrps_pks_domains(self) -> list[Domain]:
@@ -225,4 +274,3 @@ class Record:
                 seen.add(key)
                 unique.append(hit)
         return unique
-

@@ -1,0 +1,20 @@
+LOCUS       PARTEDGE               100 bp    DNA     linear   01-JAN-2000
+DEFINITION  synthetic partial-edge fixture.
+ACCESSION   PARTEDGE
+VERSION     PARTEDGE.1
+KEYWORDS    .
+SOURCE      synthetic construct
+  ORGANISM  synthetic construct
+            other sequences;
+FEATURES             Location/Qualifiers
+     source          1..100
+                     /organism="synthetic construct"
+     region          1..100
+                     /region_number="1"
+                     /product="test-product"
+     CDS             <1..30
+                     /locus_tag="EDGE1"
+                     /product="partial edge protein"
+ORIGIN
+        1 aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa aaaaaaaaaa
+//

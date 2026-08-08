@@ -2,6 +2,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from antismash_review.cli import main
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "semantics.gb"
@@ -54,4 +56,38 @@ def test_cli_reports_native_json_as_unsupported(tmp_path: Path, capsys: object) 
     source.write_text("{}", encoding="utf-8")
     assert main(["inspect", str(source)]) == 2
     captured = capsys.readouterr()  # type: ignore[union-attr]
-    assert "native antiSMASH JSON input is not supported" in captured.err
+    assert "native antiSMASH JSON cannot yet provide the review record model" in captured.err
+
+
+def test_cli_no_command_shows_help() -> None:
+    """Calling the CLI with no arguments should fail (required subcommand)."""
+    with pytest.raises(SystemExit) as exc_info:
+        main([])
+    assert exc_info.value.code == 2
+
+
+def test_cli_discovery_error_for_nonexistent_path(capsys: object) -> None:
+    """CLI returns status 2 and stderr message for nonexistent input path."""
+    result = main(["inspect", "/nonexistent/path/to/nothing.gbk"])
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert result == 2
+    assert "error:" in captured.err.casefold()
+
+
+def test_cli_parse_error_returns_status_2(tmp_path: Path, capsys: object) -> None:
+    """CLI returns status 2 when GenBank parsing fails on corrupt content."""
+    corrupt = tmp_path / "corrupt.gb"
+    corrupt.write_text("THIS IS NOT GENBANK FORMAT", encoding="utf-8")
+    result = main(["inspect", str(corrupt)])
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert result == 2
+    assert "error:" in captured.err.casefold()
+
+
+def test_cli_json_only_directory_rejects(tmp_path: Path, capsys: object) -> None:
+    """A directory containing only JSON files returns status 2."""
+    (tmp_path / "result.json").write_text("{}", encoding="utf-8")
+    result = main(["inspect", str(tmp_path)])
+    captured = capsys.readouterr()  # type: ignore[union-attr]
+    assert result == 2
+    assert "native antiSMASH JSON" in captured.err or "no GenBank" in captured.err

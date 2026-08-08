@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from antismash_review import __version__
-from antismash_review.models import Record
-from antismash_review.review import review_record
-from antismash_review.schema import RECORD_SCHEMA_NAME, RECORD_SCHEMA_VERSION
+from antismash_review.compare import ComparisonResult
+from antismash_review.schema import COMPARISON_SCHEMA_NAME, COMPARISON_SCHEMA_VERSION
 
 
 def _json_default(value: Any) -> Any:
@@ -20,14 +19,11 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Cannot serialize {type(value).__name__}")
 
 
-def dumps_records(records: list[Record]) -> str:
+def dumps_comparison(result: ComparisonResult) -> str:
     document = {
-        "schema_name": RECORD_SCHEMA_NAME,
-        "schema_version": RECORD_SCHEMA_VERSION,
+        "schema_name": COMPARISON_SCHEMA_NAME,
+        "schema_version": COMPARISON_SCHEMA_VERSION,
         "parser_version": __version__,
-        "records": [asdict(record) for record in records],
-        "diagnostics": [
-            asdict(diagnostic) for record in records for diagnostic in review_record(record)
-        ],
+        "comparison": asdict(result),
     }
     return json.dumps(document, indent=2, sort_keys=True, default=_json_default) + "\n"

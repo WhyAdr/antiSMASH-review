@@ -77,6 +77,8 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 - Count an `aSDomain` as NRPS/PKS architecture only when `aSTool=nrps_pks_domains`; retain all other antiSMASH domains separately.
 - Keep `aSModule` entities separate and inspect missing or duplicate domain-reference diagnostics.
 - Do not apply a universal motif e-value threshold. Interpret motif evidence using the producing tool and motif family.
+- Treat domain specificity as source evidence: repeated values, including KR activity or
+  stereochemistry strings, are retained but are not independently validated predictions.
 - Distinguish boundary-limited context from demonstrated core or CDS truncation.
 - Do not infer TFBS validity, LysR identity, HexS orthology, substrate confirmation, frameshifts, or catalytic loss from parser output alone.
 - Report both raw and deduplicated Pfam counts when comparing annotations.

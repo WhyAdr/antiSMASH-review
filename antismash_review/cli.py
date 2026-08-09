@@ -138,9 +138,6 @@ def load_review_records(
     return records, all_inputs
 
 
-_load_review_records = load_review_records
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)

@@ -16,6 +16,9 @@
 - Store missing `gene_kind` as `unclassified`; reserve `other` for an explicit source qualifier.
 - Retain all `aSDomain` features in `domains`. Derive `nrps_pks_domains` only from domains whose tool is exactly `nrps_pks_domains`.
 - Parse plural `domain_subtypes` and legacy singular `domain_subtype`.
+- Preserve repeated `/specificity` values in order in both `Domain.specificity` and the raw
+  qualifier map. The current model does not classify T2PKS/KR/Minowa semantics; downstream
+  code must interpret the retained strings conservatively.
 - Keep `aSModule` objects separate from domains. Resolve their domain IDs and diagnose missing or duplicated references.
 - Allow `CDS_motif` records without a motif label or e-value, including RiPP prepeptide annotations.
 - Retain raw `PFAM_domain` hits and expose a stable deduplicated view keyed by record, locus, nucleotide/protein coordinates, and version-normalized accession.
@@ -26,6 +29,11 @@
 - Diagnose a proto-core at a record edge separately.
 - Diagnose a CDS edge truncation only when its location is fuzzy/partial and reaches the edge.
 - Do not emit a generic motif-confidence warning based on one e-value cutoff.
+- Standalone `gene` features remain raw evidence. A `/pseudo` gene overlapping a region
+  emits `pseudogene_in_cluster`; this does not prove a frameshift or functional loss.
+- Feature types outside the adapter set are retained in `raw_features` and produce one
+  aggregated `unrecognized_feature_type` NOTICE per record, except the structural `source`
+  feature.
 
 ## Diagnostics reference
 
@@ -39,6 +47,8 @@
 | `domain_id_duplicated` | WARNING | A domain_id appears more than once across aSDomain features | Does not determine which instance is canonical |
 | `orphan_module_locus` | WARNING | An aSModule references locus tags absent from the CDS set | Does not prove the module is misannotated; the CDS may have been filtered |
 | `missing_nrps_pks_architecture` | WARNING | Region products contain NRPS/PKS terms but no aSTool=nrps_pks_domains domains were parsed | Does not prove the annotation is wrong; the relevant domains may be in a different record |
+| `pseudogene_in_cluster` | WARNING | A standalone `/gene` with `/pseudo` overlaps one or more regions | Does not prove a frameshift, functional loss, or compound identity |
+| `unrecognized_feature_type` | NOTICE | A non-structural feature type is retained only in `raw_features` | Does not mean the source annotation is invalid; it marks adapter coverage |
 | `clusterblast_parse_failed` | WARNING (lenient) | A recognized ClusterBlast text or JSON sidecar could not be parsed or attached safely | Does not repair or silently discard the malformed sidecar; strict mode fails instead |
 
 Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated Pfam totals already expose the underlying representation.
@@ -56,6 +66,8 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 ## ClusterBlast sidecar enrichment
 
 - Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
+- The current contract reads recognized `.txt` sidecars directly inside those canonical
+  directories; nested HTML/detail assets are ignored.
 - Parse native antiSMASH JSON `antismash.modules.clusterblast` modules validating module schema `2` and result schema `5`.
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
 - Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.

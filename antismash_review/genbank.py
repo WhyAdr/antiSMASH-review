@@ -40,6 +40,21 @@ _GENE_FUNCTION_RE = re.compile(
     r"^(?P<category>[\w-]+)(?:\s+\((?P<tool>[^)]+)\))?(?:\s+(?P<description>.*))?$"
 )
 
+_ADAPTED_FEATURE_TYPES = frozenset(
+    {
+        "region",
+        "cand_cluster",
+        "protocluster",
+        "proto_core",
+        "CDS",
+        "aSDomain",
+        "aSModule",
+        "CDS_motif",
+        "PFAM_domain",
+    }
+)
+_STRUCTURAL_RAW_ONLY_FEATURE_TYPES = frozenset({"source"})
+
 
 class GenBankParseError(RuntimeError):
     """Raised when a GenBank file cannot be parsed or adapted strictly."""
@@ -344,6 +359,30 @@ def _adapt_feature(record: Record, raw: RawFeature) -> None:
         record.pfam_hits.append(_pfam_hit(raw))
 
 
+def _diagnose_unrecognized_features(record: Record) -> None:
+    unknown = sorted(
+        {
+            raw.feature_type
+            for raw in record.raw_features
+            if raw.feature_type not in _ADAPTED_FEATURE_TYPES
+            and raw.feature_type not in _STRUCTURAL_RAW_ONLY_FEATURE_TYPES
+        }
+    )
+    if unknown:
+        record.diagnostics.append(
+            Diagnostic(
+                code="unrecognized_feature_type",
+                severity=Severity.NOTICE,
+                message=(
+                    "Feature types retained only as raw evidence and not adapted: "
+                    + ", ".join(unknown)
+                ),
+                source=str(record.source_path),
+                record_id=record.record_id,
+            )
+        )
+
+
 def _resolve_modules(record: Record) -> None:
     by_id: dict[str, list[Domain]] = {}
     for domain in record.domains:
@@ -449,6 +488,7 @@ def _parse_record(
 
     _resolve_modules(record)
     _assign_gene_memberships(record)
+    _diagnose_unrecognized_features(record)
     return record
 
 

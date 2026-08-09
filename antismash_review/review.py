@@ -1,12 +1,54 @@
 from __future__ import annotations
 
-from .models import Diagnostic, Record, Severity
+from .models import Diagnostic, Location, RawFeature, Record, Severity
+
+
+def _locations_overlap(left: Location, right: Location) -> bool:
+    return any(
+        left_part.start < right_part.end and right_part.start < left_part.end
+        for left_part in left.parts
+        for right_part in right.parts
+    )
+
+
+def _raw_label(raw: RawFeature) -> str:
+    for key in ("locus_tag", "gene"):
+        values = raw.qualifiers.get(key, ())
+        if values and values[0]:
+            return values[0]
+    return "unlabelled gene"
 
 
 def _extend_consistency_diagnostics(
     record: Record,
     diagnostics: list[Diagnostic],
 ) -> None:
+    for raw in record.raw_features:
+        if raw.feature_type != "gene" or "pseudo" not in raw.qualifiers:
+            continue
+        overlapping_regions = [
+            region for region in record.regions if _locations_overlap(raw.location, region.location)
+        ]
+        if not overlapping_regions:
+            continue
+        region_numbers = sorted(
+            region.number for region in overlapping_regions if region.number is not None
+        )
+        region_text = ", ".join(str(number) for number in region_numbers) or "unnumbered"
+        diagnostics.append(
+            Diagnostic(
+                code="pseudogene_in_cluster",
+                severity=Severity.WARNING,
+                message=(
+                    f"Pseudo gene {_raw_label(raw)} overlaps antiSMASH region(s): "
+                    f"{region_text}; inspect frameshift or annotation evidence"
+                ),
+                source=str(record.source_path),
+                record_id=record.record_id,
+                feature_index=raw.feature_index,
+            )
+        )
+
     gene_locus_tags = {gene.locus_tag for gene in record.genes if gene.locus_tag}
     for module_index, module in enumerate(record.modules):
         orphan_tags = sorted({tag for tag in module.locus_tags if tag not in gene_locus_tags})

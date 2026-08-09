@@ -1,0 +1,11 @@
+ClusterBlast scores for SYNTH.1
+Significant hits:
+1. SYNTH-HIT-1	Synthetic hit
+Details:
+1. SYNTH-HIT-1
+Type: NRPS
+Number of proteins with BLAST hits to this cluster: 1
+Cumulative BLAST score: 12.5
+Table of Blast hits
+SYN_CDS_1	SYNTH_SUBJECT	90.0	12.5	80.0	1e-10
+>>

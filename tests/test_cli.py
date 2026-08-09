@@ -32,6 +32,31 @@ def test_cli_inspect_dispatches_every_public_format(
         assert output.splitlines()[0]
 
 
+@pytest.mark.parametrize(
+    "output_format",
+    [
+        "assemblyline-tsv",
+        "assemblyline-json",
+        "assemblyline-markdown",
+        "architecture-json",
+        "gff3",
+        "bed",
+        "provenance-json",
+        "provenance-tsv",
+    ],
+)
+def test_cli_inspect_dispatches_assemblyline_formats(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    input_path = write_synthetic_genbank(tmp_path / "synthetic.gbk")
+
+    assert main(["inspect", str(input_path), "--format", output_format]) == 0
+    output = capsys.readouterr().out
+    assert output
+
+
 def test_cli_inspect_writes_output_file(
     tmp_path: Path,
 ) -> None:

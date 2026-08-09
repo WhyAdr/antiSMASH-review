@@ -15,6 +15,7 @@ dist/
 /.pytest_temp/
 /.release-venv/
 /SM-ZPG19--NOACCESSION-antismash/
+/PA-LS101--GCA-030388725.1-antismash/
 
 # Local antiSMASH integration inputs belong outside the distributable skill.
 /*.gb

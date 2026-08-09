@@ -12,14 +12,22 @@ from antismash_review import (
     Diagnostic,
     GenBankParseError,
     Record,
+    ReviewFinding,
     Severity,
+    assess_architecture,
+    build_cohort,
     dumps_records,
     parse_genbank,
+    predict_assembly_lines,
+    render_bed,
     render_clusterblast_tsv,
     render_domain_tsv,
     render_gene_tsv,
+    render_gff3,
+    render_provenance_json,
     render_records,
     render_tsv,
+    review_findings,
     review_record,
 )
 
@@ -27,15 +35,23 @@ EXPECTED_PUBLIC_NAMES = {
     "Diagnostic",
     "GenBankParseError",
     "Record",
+    "ReviewFinding",
     "Severity",
+    "assess_architecture",
+    "build_cohort",
     "__version__",
     "dumps_records",
     "parse_genbank",
+    "predict_assembly_lines",
+    "render_bed",
     "render_clusterblast_tsv",
     "render_domain_tsv",
     "render_gene_tsv",
+    "render_gff3",
+    "render_provenance_json",
     "render_records",
     "render_tsv",
+    "review_findings",
     "review_record",
 }
 
@@ -53,8 +69,16 @@ def test_top_level_public_api_exports_expected_names() -> None:
     assert antismash_review.parse_genbank is parse_genbank
     assert antismash_review.GenBankParseError is GenBankParseError
     assert antismash_review.Record is Record
+    assert antismash_review.ReviewFinding is ReviewFinding
     assert antismash_review.Diagnostic is Diagnostic
     assert antismash_review.Severity is Severity
+    assert antismash_review.predict_assembly_lines is predict_assembly_lines
+    assert antismash_review.assess_architecture is assess_architecture
+    assert antismash_review.build_cohort is build_cohort
+    assert antismash_review.render_bed is render_bed
+    assert antismash_review.render_gff3 is render_gff3
+    assert antismash_review.render_provenance_json is render_provenance_json
+    assert antismash_review.review_findings is review_findings
 
 
 def test_top_level_parse_review_export_workflow(tmp_path: Path) -> None:

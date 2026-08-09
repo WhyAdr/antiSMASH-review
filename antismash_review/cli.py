@@ -5,15 +5,17 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from .clusterblast import (
-    ClusterBlastParseError,
-    attach_clusterblast_results,
-    merge_clusterblast_results,
-    parse_clusterblast_json,
-    parse_clusterblast_text,
-)
+from .clusterblast import ClusterBlastParseError
+from .cohort import CohortError, build_cohort
 from .compare import compare_records
 from .discovery import InputManifest, discover
+from .exporters.architecture_json import dumps_architecture
+from .exporters.assemblyline_json import dumps_assembly_lines
+from .exporters.assemblyline_markdown import render_assemblyline_markdown
+from .exporters.assemblyline_table import render_assemblyline_tsv
+from .exporters.bed import render_bed
+from .exporters.cohort_json import dumps_cohort
+from .exporters.cohort_table import render_domain_matrix_tsv, render_product_matrix_tsv
 from .exporters.compare_json import dumps_comparison
 from .exporters.compare_markdown import render_comparison
 from .exporters.entity_tables import (
@@ -21,11 +23,14 @@ from .exporters.entity_tables import (
     render_domain_tsv,
     render_gene_tsv,
 )
+from .exporters.gff3 import render_gff3
 from .exporters.json_export import dumps_records
 from .exporters.markdown import render_records
+from .exporters.provenance import dumps_provenance, render_provenance_tsv
 from .exporters.tables import render_tsv
-from .genbank import GenBankParseError, parse_genbank
-from .models import Diagnostic, Record, Severity
+from .genbank import GenBankParseError
+from .loading import load_review_input
+from .models import Record
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,7 +41,22 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("input", type=Path)
     inspect.add_argument(
         "--format",
-        choices=("markdown", "json", "tsv", "gene-tsv", "domain-tsv", "clusterblast-tsv"),
+        choices=(
+            "markdown",
+            "json",
+            "tsv",
+            "gene-tsv",
+            "domain-tsv",
+            "clusterblast-tsv",
+            "assemblyline-tsv",
+            "assemblyline-json",
+            "assemblyline-markdown",
+            "architecture-json",
+            "gff3",
+            "bed",
+            "provenance-json",
+            "provenance-tsv",
+        ),
         default="markdown",
     )
     inspect.add_argument("--output", type=Path)
@@ -75,72 +95,88 @@ def build_parser() -> argparse.ArgumentParser:
     compare_cmd.add_argument("--lenient", action="store_true")
     compare_cmd.add_argument("--recursive", action="store_true")
 
+    cohort_cmd = subparsers.add_parser("cohort", help="build deterministic cohort matrices")
+    cohort_cmd.add_argument("root", nargs="?", type=Path)
+    cohort_cmd.add_argument("--manifest", type=Path)
+    cohort_cmd.add_argument(
+        "--format",
+        choices=("product-matrix-tsv", "domain-matrix-tsv", "json"),
+        default="product-matrix-tsv",
+    )
+    cohort_cmd.add_argument("--value", choices=("binary", "count"), default="binary")
+    cohort_cmd.add_argument("--cluster-by", choices=("none", "domain-jaccard"), default="none")
+    cohort_cmd.add_argument("--tree-output", type=Path)
+    cohort_cmd.add_argument("--output", type=Path)
+    cohort_cmd.add_argument("--lenient", action="store_true")
+    cohort_cmd.add_argument("--skip-invalid-members", action="store_true")
+
     return parser
 
 
 def load_review_records(
     manifest: InputManifest,
     *,
-    lenient: bool,
+    lenient: bool = False,
 ) -> tuple[list[Record], set[Path]]:
-    paths = manifest.aggregate_genbanks or manifest.region_genbanks
-    all_inputs = (
-        set(manifest.aggregate_genbanks)
-        | set(manifest.region_genbanks)
-        | set(manifest.json_files)
-        | set(manifest.clusterblast_files)
-        | set(manifest.knownclusterblast_files)
-        | set(manifest.subclusterblast_files)
-    )
+    """Compatibility wrapper for the pre-Phase-0 loader API."""
 
-    if not paths:
-        if manifest.json_files:
-            message = (
-                "native antiSMASH JSON cannot yet provide the review record model; "
-                "provide GenBank, optionally in a result directory with JSON used as "
-                "ClusterBlast enrichment"
-            )
-        else:
-            message = "no GenBank input found"
-        raise ValueError(message)
-
-    records = [record for path in paths for record in parse_genbank(path, lenient=lenient)]
-
-    text_results = []
-    json_results = []
-    try:
-        for p in manifest.clusterblast_files:
-            text_results.append(parse_clusterblast_text(p, search_type="clusterblast"))
-        for p in manifest.knownclusterblast_files:
-            text_results.append(parse_clusterblast_text(p, search_type="knownclusterblast"))
-        for p in manifest.subclusterblast_files:
-            text_results.append(parse_clusterblast_text(p, search_type="subclusterblast"))
-        for p in manifest.json_files:
-            json_results.extend(parse_clusterblast_json(p))
-        if text_results or json_results:
-            merged = merge_clusterblast_results(text_results, json_results)
-            attach_clusterblast_results(records, merged)
-    except ClusterBlastParseError as exc:
-        if lenient:
-            if records:
-                records[0].diagnostics.append(
-                    Diagnostic(
-                        code="clusterblast_parse_failed",
-                        severity=Severity.WARNING,
-                        message=str(exc),
-                        source=str(manifest.root),
-                        record_id=records[0].record_id,
-                    )
-                )
-        else:
-            raise
-
-    return records, all_inputs
+    loaded = load_review_input(manifest, lenient=lenient)
+    return loaded.records, loaded.input_paths
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "cohort":
+        try:
+            cohort = build_cohort(
+                args.root,
+                manifest=args.manifest,
+                value_mode=args.value,
+                lenient=args.lenient,
+                skip_invalid_members=args.skip_invalid_members,
+                cluster_by=args.cluster_by,
+            )
+        except CohortError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        if args.tree_output and cohort.cluster_newick is None:
+            print("error: --tree-output requires --cluster-by domain-jaccard", file=sys.stderr)
+            return 2
+
+        if args.format == "product-matrix-tsv":
+            output = render_product_matrix_tsv(cohort)
+        elif args.format == "domain-matrix-tsv":
+            output = render_domain_matrix_tsv(cohort)
+        else:
+            output = dumps_cohort(cohort)
+
+        if args.output:
+            output_path = args.output.resolve()
+            if output_path in cohort.input_paths:
+                print(f"error: refusing to overwrite input file: {output_path}", file=sys.stderr)
+                return 2
+            try:
+                args.output.write_text(output, encoding="utf-8")
+            except OSError as exc:
+                print(f"error: could not write {args.output}: {exc}", file=sys.stderr)
+                return 2
+        else:
+            print(output, end="")
+        if args.tree_output:
+            tree_output = cohort.cluster_newick
+            assert tree_output is not None
+            tree_path = args.tree_output.resolve()
+            if tree_path in cohort.input_paths:
+                print(f"error: refusing to overwrite input file: {tree_path}", file=sys.stderr)
+                return 2
+            try:
+                args.tree_output.write_text(tree_output + "\n", encoding="utf-8")
+            except OSError as exc:
+                print(f"error: could not write {args.tree_output}: {exc}", file=sys.stderr)
+                return 2
+        return 0
 
     if args.command == "compare":
         if args.match_by == "coordinate_overlap":
@@ -163,16 +199,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
 
         try:
-            left_records, left_inputs = load_review_records(left_manifest, lenient=args.lenient)
-            right_records, right_inputs = load_review_records(right_manifest, lenient=args.lenient)
+            left_loaded = load_review_input(left_manifest, lenient=args.lenient)
+            right_loaded = load_review_input(right_manifest, lenient=args.lenient)
         except (GenBankParseError, ClusterBlastParseError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
 
         try:
             comparison = compare_records(
-                left_records,
-                right_records,
+                left_loaded.records,
+                right_loaded.records,
                 left_input=args.left,
                 right_input=args.right,
                 match_method=args.match_by,
@@ -190,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.output:
             output_path = args.output.resolve()
-            all_inputs = left_inputs | right_inputs
+            all_inputs = left_loaded.input_paths | right_loaded.input_paths
             if output_path in all_inputs:
                 print(f"error: refusing to overwrite input file: {output_path}", file=sys.stderr)
                 return 2
@@ -210,27 +246,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     try:
-        records, all_inputs = load_review_records(manifest, lenient=args.lenient)
+        loaded = load_review_input(manifest, lenient=args.lenient)
     except (GenBankParseError, ClusterBlastParseError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
     if args.format == "json":
-        output = dumps_records(records)
+        output = dumps_records(loaded.records)
     elif args.format == "tsv":
-        output = render_tsv(records)
+        output = render_tsv(loaded.records)
     elif args.format == "gene-tsv":
-        output = render_gene_tsv(records)
+        output = render_gene_tsv(loaded.records)
     elif args.format == "domain-tsv":
-        output = render_domain_tsv(records)
+        output = render_domain_tsv(loaded.records)
     elif args.format == "clusterblast-tsv":
-        output = render_clusterblast_tsv(records)
+        output = render_clusterblast_tsv(loaded.records)
+    elif args.format == "assemblyline-tsv":
+        output = render_assemblyline_tsv(loaded.records)
+    elif args.format == "assemblyline-json":
+        output = dumps_assembly_lines(loaded.records)
+    elif args.format == "assemblyline-markdown":
+        output = render_assemblyline_markdown(loaded.records)
+    elif args.format == "architecture-json":
+        output = dumps_architecture(loaded.records)
+    elif args.format == "gff3":
+        output = render_gff3(loaded.records)
+    elif args.format == "bed":
+        output = render_bed(loaded.records)
+    elif args.format == "provenance-json":
+        output = dumps_provenance(loaded.records)
+    elif args.format == "provenance-tsv":
+        output = render_provenance_tsv(loaded.records)
     else:
-        output = render_records(records)
+        output = render_records(loaded.records)
 
     if args.output:
         output_path = args.output.resolve()
-        if output_path in all_inputs:
+        if output_path in loaded.input_paths:
             print(f"error: refusing to overwrite input file: {output_path}", file=sys.stderr)
             return 2
         try:

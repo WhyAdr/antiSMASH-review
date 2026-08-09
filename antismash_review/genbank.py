@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -14,7 +15,9 @@ except ImportError as exc:  # pragma: no cover - exercised in a clean environmen
         "GenBank input requires Biopython; install antismash-review with `python -m pip install .`"
     ) from exc
 
+from .locations import overlaps
 from .models import (
+    AntiSmashProvenance,
     CollectionFeature,
     Diagnostic,
     Domain,
@@ -31,11 +34,11 @@ from .models import (
     Severity,
 )
 
-_VERSION_RE = re.compile(r"^\s*Version\s*::\s*(?P<version>\S+)", re.MULTILINE)
 _ANTISMASH_DATA_RE = re.compile(
     r"##antiSMASH-Data-START##(?P<body>.*?)##antiSMASH-Data-END##",
     re.IGNORECASE | re.DOTALL,
 )
+_METADATA_LINE_RE = re.compile(r"^\s*(?P<key>[^:]+?)\s*::\s*(?P<value>.*?)\s*$")
 _GENE_FUNCTION_RE = re.compile(
     r"^(?P<category>[\w-]+)(?:\s+\((?P<tool>[^)]+)\))?(?:\s+(?P<description>.*))?$"
 )
@@ -153,21 +156,117 @@ def _location(feature: SeqFeature, record_length: int) -> Location:
     )
 
 
-def _antismash_version(record: SeqRecord) -> str | None:
+def _metadata_value(value: object) -> tuple[str, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item) for item in value)
+    if isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            parsed = None
+        if isinstance(parsed, (list, tuple)) and all(isinstance(item, str) for item in parsed):
+            return tuple(parsed)
+    return (str(value),)
+
+
+def _parse_antismash_metadata_block(comment: str) -> dict[str, tuple[str, ...]]:
+    block = _ANTISMASH_DATA_RE.search(comment)
+    if block is None:
+        return {}
+    raw_fields: dict[str, list[str]] = {}
+    for line in block.group("body").splitlines():
+        match = _METADATA_LINE_RE.match(line)
+        if match is None:
+            continue
+        raw_fields.setdefault(match.group("key").strip(), []).extend(
+            _metadata_value(match.group("value").strip())
+        )
+    return {key: tuple(values) for key, values in raw_fields.items()}
+
+
+def _raw_antismash_metadata(path: Path) -> list[dict[str, tuple[str, ...]]]:
+    """Read raw metadata blocks so repeated keys lost by Biopython survive."""
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    chunks = re.split(r"(?m)^\s*//\s*$", text)
+    return [_parse_antismash_metadata_block(chunk) for chunk in chunks if chunk.strip()]
+
+
+def _antismash_metadata(
+    record: SeqRecord,
+    raw_fields: Mapping[str, tuple[str, ...]] | None = None,
+) -> dict[str, tuple[str, ...]]:
+    """Return all antiSMASH structured-comment fields without dropping repeats."""
+
     structured = record.annotations.get("structured_comment", {})
     if isinstance(structured, Mapping):
         for section_name, section in structured.items():
             if str(section_name).casefold() != "antismash-data":
                 continue
             if isinstance(section, Mapping):
-                version = section.get("Version")
-                if version:
-                    return str(version)
+                structured_fields = {
+                    str(key): _metadata_value(value)
+                    for key, value in section.items()
+                    if value is not None
+                }
+                if structured_fields:
+                    if raw_fields:
+                        return {**structured_fields, **raw_fields}
+                    return structured_fields
 
-    comment = str(record.annotations.get("comment", ""))
-    block = _ANTISMASH_DATA_RE.search(comment)
-    match = _VERSION_RE.search(block.group("body")) if block else None
-    return match.group("version") if match else None
+    if raw_fields:
+        return dict(raw_fields)
+    return _parse_antismash_metadata_block(str(record.annotations.get("comment", "")))
+
+
+def _metadata_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def _first_metadata_value(
+    fields: Mapping[str, tuple[str, ...]],
+    aliases: set[str],
+) -> str | None:
+    for key, values in fields.items():
+        if _metadata_key(key) in aliases and values:
+            return values[0]
+    return None
+
+
+def _antismash_provenance(
+    record: SeqRecord,
+    raw_fields: Mapping[str, tuple[str, ...]] | None = None,
+) -> AntiSmashProvenance:
+    fields = _antismash_metadata(record, raw_fields)
+    database_versions = {
+        key: values[0]
+        for key, values in fields.items()
+        if values and "database" in _metadata_key(key)
+    }
+    pfam_version = next(
+        (values[0] for key, values in fields.items() if values and "pfam" in _metadata_key(key)),
+        None,
+    )
+    detection_rule_set_version = next(
+        (
+            values[0]
+            for key, values in fields.items()
+            if values and "detection" in _metadata_key(key) and "rule" in _metadata_key(key)
+        ),
+        None,
+    )
+    return AntiSmashProvenance(
+        version=_first_metadata_value(fields, {"version", "antismashversion"}),
+        run_date=_first_metadata_value(fields, {"rundate"}),
+        pfam_version=pfam_version,
+        detection_rule_set_version=detection_rule_set_version,
+        database_versions=database_versions,
+        raw_fields=fields,
+    )
+
+
+def _antismash_version(record: SeqRecord) -> str | None:
+    return _antismash_provenance(record).version
 
 
 def _annotation_text(record: SeqRecord, key: str) -> str | None:
@@ -417,19 +516,11 @@ def _resolve_modules(record: Record) -> None:
                 )
 
 
-def _overlaps(left: Location, right: Location) -> bool:
-    return any(
-        left_part.start < right_part.end and right_part.start < left_part.end
-        for left_part in left.parts
-        for right_part in right.parts
-    )
-
-
 def _member_numbers(gene: Gene, collections: list[CollectionFeature]) -> list[int]:
     return [
         collection.number
         for collection in collections
-        if collection.number is not None and _overlaps(collection.location, gene.location)
+        if collection.number is not None and overlaps(collection.location, gene.location)
     ]
 
 
@@ -447,7 +538,9 @@ def _parse_record(
     *,
     source_sha256: str,
     lenient: bool,
+    raw_metadata: Mapping[str, tuple[str, ...]] | None = None,
 ) -> Record:
+    provenance = _antismash_provenance(source, raw_metadata)
     record = Record(
         record_id=source.id,
         name=source.name,
@@ -457,9 +550,10 @@ def _parse_record(
         topology=_annotation_text(source, "topology"),
         source_path=path.resolve(),
         source_sha256=source_sha256,
-        antismash_version=_antismash_version(source),
+        antismash_version=provenance.version,
         organism=_annotation_text(source, "organism"),
         taxonomy=_annotation_list(source, "taxonomy"),
+        antismash_provenance=provenance,
     )
 
     for index, feature in enumerate(source.features):
@@ -498,14 +592,16 @@ def parse_genbank(path: Path, *, lenient: bool = False) -> list[Record]:
     records: list[Record] = []
     try:
         source_sha256 = _sha256(path)
+        raw_metadata = _raw_antismash_metadata(path)
         parsed_records = SeqIO.parse(path, "genbank")
-        for source_record in parsed_records:
+        for index, source_record in enumerate(parsed_records):
             records.append(
                 _parse_record(
                     source_record,
                     path,
                     source_sha256=source_sha256,
                     lenient=lenient,
+                    raw_metadata=raw_metadata[index] if index < len(raw_metadata) else None,
                 )
             )
     except (OSError, ValueError, TypeError) as exc:

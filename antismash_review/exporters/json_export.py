@@ -21,11 +21,18 @@ def _json_default(value: Any) -> Any:
 
 
 def dumps_records(records: list[Record]) -> str:
+    serialized_records = []
+    for record in records:
+        serialized = asdict(record)
+        # Provenance is emitted by the dedicated manifest exporter first; keep the
+        # existing record envelope/schema stable until embedding is explicitly versioned.
+        serialized.pop("antismash_provenance", None)
+        serialized_records.append(serialized)
     document = {
         "schema_name": RECORD_SCHEMA_NAME,
         "schema_version": RECORD_SCHEMA_VERSION,
         "parser_version": __version__,
-        "records": [asdict(record) for record in records],
+        "records": serialized_records,
         "diagnostics": [
             asdict(diagnostic) for record in records for diagnostic in review_record(record)
         ],

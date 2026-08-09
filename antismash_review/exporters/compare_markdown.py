@@ -113,6 +113,42 @@ def render_comparison(result: ComparisonResult) -> str:
         else:
             lines.append("- Resolved diagnostics: None")
 
+        if comp.provenance_delta is not None:
+            delta = comp.provenance_delta
+            lines.extend(["", "### Provenance", ""])
+            left_version = delta.left_antismash_version or "unknown"
+            right_version = delta.right_antismash_version or "unknown"
+            if delta.antismash_version_changed is True:
+                lines.append(f"- antiSMASH version: `{left_version}` -> `{right_version}`")
+            elif delta.antismash_version_changed is False:
+                lines.append(f"- antiSMASH version: unchanged (`{left_version}`)")
+            else:
+                lines.append("- antiSMASH version: unknown on at least one side")
+            lines.append(
+                "- Pfam metadata: "
+                + (
+                    "changed"
+                    if delta.pfam_version_changed is True
+                    else "unchanged"
+                    if delta.pfam_version_changed is False
+                    else "unknown"
+                )
+            )
+            lines.append(
+                "- Detection-rule metadata: "
+                + (
+                    "changed"
+                    if delta.detection_rule_set_changed is True
+                    else "unchanged"
+                    if delta.detection_rule_set_changed is False
+                    else "unknown"
+                )
+            )
+            if delta.differing_raw_fields:
+                lines.append(
+                    "- Differing raw provenance fields: " + ", ".join(delta.differing_raw_fields)
+                )
+
         lines.extend(
             [
                 "",

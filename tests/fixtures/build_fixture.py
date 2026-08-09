@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
-from Bio import SeqIO
+from Bio import BiopythonWarning, SeqIO
 from Bio.Seq import Seq
 from Bio.SeqFeature import BeforePosition, ExactPosition, FeatureLocation, SeqFeature
 from Bio.SeqRecord import SeqRecord
@@ -154,5 +155,14 @@ def write_synthetic_genbank(path: Path) -> Path:
         _feature("rRNA", 200, 220),
         _feature("repeat_region", 230, 250),
     ]
-    SeqIO.write(record, path, "genbank")
+    # The synthetic fixture intentionally uses the long antiSMASH qualifier names;
+    # Biopython warns while serializing them, but the parser must still preserve them.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Feature qualifier key '(candidate_cluster_numbers|candidate_cluster_number)' "
+            r"is longer than maximum length specified by standard \(20 characters\)\.",
+            category=BiopythonWarning,
+        )
+        SeqIO.write(record, path, "genbank")
     return path

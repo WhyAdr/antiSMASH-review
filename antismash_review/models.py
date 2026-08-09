@@ -234,6 +234,16 @@ class PfamHit:
         )
 
 
+@dataclass(slots=True, frozen=True)
+class AntiSmashProvenance:
+    version: str | None = None
+    run_date: str | None = None
+    pfam_version: str | None = None
+    detection_rule_set_version: str | None = None
+    database_versions: dict[str, str] = field(default_factory=dict)
+    raw_fields: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class Record:
     record_id: str
@@ -247,6 +257,7 @@ class Record:
     antismash_version: str | None
     organism: str | None
     taxonomy: list[str]
+    antismash_provenance: AntiSmashProvenance = field(default_factory=AntiSmashProvenance)
     regions: list[CollectionFeature] = field(default_factory=list)
     candidate_clusters: list[CollectionFeature] = field(default_factory=list)
     protoclusters: list[CollectionFeature] = field(default_factory=list)

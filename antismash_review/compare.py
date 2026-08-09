@@ -1,20 +1,15 @@
 from __future__ import annotations
 
 import statistics
-from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
+from antismash_review.fingerprints import (
+    DiagnosticFingerprint,
+    diagnostic_counter,
+    product_counter,
+)
 from antismash_review.models import Record
-from antismash_review.review import review_record
-
-
-@dataclass(slots=True, frozen=True)
-class DiagnosticFingerprint:
-    code: str
-    severity: str
-    message: str
-    feature_index: int | None
 
 
 @dataclass(slots=True, frozen=True)
@@ -34,6 +29,16 @@ class CoordinateMatchEvidence:
     right_span_bp: int
     left_overlap_fraction: float
     right_overlap_fraction: float
+
+
+@dataclass(slots=True, frozen=True)
+class ProvenanceDelta:
+    antismash_version_changed: bool | None
+    left_antismash_version: str | None
+    right_antismash_version: str | None
+    pfam_version_changed: bool | None
+    detection_rule_set_changed: bool | None
+    differing_raw_fields: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -56,6 +61,7 @@ class RecordComparison:
     left_intergenic: IntergenicSummary
     right_intergenic: IntergenicSummary
     coordinate_evidence: CoordinateMatchEvidence | None = None
+    provenance_delta: ProvenanceDelta | None = None
 
 
 @dataclass(slots=True)
@@ -163,26 +169,14 @@ def _compare_single_pair(
     match_key: str,
     evidence: CoordinateMatchEvidence | None = None,
 ) -> RecordComparison:
-    left_products = [p for r in left.regions for p in r.products]
-    right_products = [p for r in right.regions for p in r.products]
-
-    left_p_counter = Counter(left_products)
-    right_p_counter = Counter(right_products)
+    left_p_counter = product_counter([left])
+    right_p_counter = product_counter([right])
 
     gained = sorted((right_p_counter - left_p_counter).elements())
     lost = sorted((left_p_counter - right_p_counter).elements())
 
-    left_diags = [
-        DiagnosticFingerprint(d.code, d.severity.value, d.message, d.feature_index)
-        for d in review_record(left)
-    ]
-    right_diags = [
-        DiagnosticFingerprint(d.code, d.severity.value, d.message, d.feature_index)
-        for d in review_record(right)
-    ]
-
-    left_d_counter = Counter(left_diags)
-    right_d_counter = Counter(right_diags)
+    left_d_counter = diagnostic_counter([left])
+    right_d_counter = diagnostic_counter([right])
 
     new_d = sorted(
         (right_d_counter - left_d_counter).elements(),
@@ -191,6 +185,40 @@ def _compare_single_pair(
     resolved_d = sorted(
         (left_d_counter - right_d_counter).elements(),
         key=lambda d: (d.code, d.severity, d.message, d.feature_index or 0),
+    )
+
+    left_provenance = left.antismash_provenance
+    right_provenance = right.antismash_provenance
+    raw_keys = set(left_provenance.raw_fields) | set(right_provenance.raw_fields)
+    differing_raw_fields = tuple(
+        sorted(
+            key
+            for key in raw_keys
+            if left_provenance.raw_fields.get(key) != right_provenance.raw_fields.get(key)
+        )
+    )
+
+    def changed(left_value: str | None, right_value: str | None) -> bool | None:
+        if left_value is None or right_value is None:
+            return None
+        return left_value != right_value
+
+    provenance_delta = ProvenanceDelta(
+        antismash_version_changed=changed(
+            left_provenance.version,
+            right_provenance.version,
+        ),
+        left_antismash_version=left_provenance.version,
+        right_antismash_version=right_provenance.version,
+        pfam_version_changed=changed(
+            left_provenance.pfam_version,
+            right_provenance.pfam_version,
+        ),
+        detection_rule_set_changed=changed(
+            left_provenance.detection_rule_set_version,
+            right_provenance.detection_rule_set_version,
+        ),
+        differing_raw_fields=differing_raw_fields,
     )
 
     return RecordComparison(
@@ -212,6 +240,7 @@ def _compare_single_pair(
         left_intergenic=intergenic_summary(left),
         right_intergenic=intergenic_summary(right),
         coordinate_evidence=evidence,
+        provenance_delta=provenance_delta,
     )
 
 

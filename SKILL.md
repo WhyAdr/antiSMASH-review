@@ -38,7 +38,17 @@ Use the packaged `inspect` and `compare` commands for analysis and the Python mo
 
 4. Use `--lenient` only to retain records when a recognized feature or sidecar cannot be adapted. It does not repair malformed GenBank or switch parsers. Report every emitted diagnostic.
 
-5. Read [references/semantic-contract.md](references/semantic-contract.md) before interpreting hierarchy, domain/module counts, motifs, boundary status, Pfam totals, ClusterBlast results, or coordinate matching.
+   5. Read [references/semantic-contract.md](references/semantic-contract.md) before interpreting hierarchy, domain/module counts, motifs, boundary status, Pfam totals, ClusterBlast results, or coordinate matching.
+
+6. Build a reproducible cohort matrix from immediate member directories or an explicit TSV manifest:
+
+   ```bash
+   python -m antismash_review cohort strains/ --format product-matrix-tsv
+   python -m antismash_review cohort strains/ --format product-matrix-tsv --value count
+   python -m antismash_review cohort --manifest samples.tsv --format domain-matrix-tsv --cluster-by domain-jaccard --tree-output domains.nwk
+   ```
+
+   Directory mode sorts member names. Manifest mode preserves listed order and accepts `sample<TAB>path` rows. Exactly one root or manifest is required. Invalid members fail with their name and path by default; `--skip-invalid-members` is explicit and reported in JSON. Cohort products count regions, domains count adapted `aSDomain` features, and product-class presence is not a homologous BGC-family call.
 
 ## Use the Python API
 
@@ -47,7 +57,14 @@ Import the supported library surface from `antismash_review`:
 ```python
 from pathlib import Path
 
-from antismash_review import GenBankParseError, dumps_records, parse_genbank, review_record
+from antismash_review import (
+    GenBankParseError,
+    dumps_records,
+    parse_genbank,
+    assess_architecture,
+    predict_assembly_lines,
+    review_record,
+)
 
 try:
     records = parse_genbank(Path("result.gbk"))
@@ -56,11 +73,13 @@ except GenBankParseError as exc:
 
 diagnostics = [item for record in records for item in review_record(record)]
 json_text = dumps_records(records)
+assembly_lines = [prediction for record in records for prediction in predict_assembly_lines(record)]
+architecture = [assessment for record in records for assessment in assess_architecture(record)]
 ```
 
 The stable top-level names are listed in `antismash_review.__all__`. `parse_genbank()` accepts one GenBank file, preserves every record, and raises `GenBankParseError` for unreadable, malformed, or empty input. Its default strict mode raises when a recognized feature cannot be adapted; `lenient=True` retains the record and emits an explicit diagnostic for that feature. It does not discover result directories or attach ClusterBlast sidecars; use the CLI for that enriched workflow.
 
-The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()`, `render_gene_tsv()`, `render_domain_tsv()`, and `render_clusterblast_tsv()`. The installed distribution includes `py.typed` so downstream type checkers use the inline annotations.
+The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()`, `render_gene_tsv()`, `render_domain_tsv()`, `render_clusterblast_tsv()`, and `render_provenance_json()`. Assembly-line predictions are available through `predict_assembly_lines()` and their dedicated JSON/TSV/Markdown exporters. `build_cohort()` provides the typed cohort-loading API; matrix and clustering presentation is exposed through the CLI/exporter modules. The installed distribution includes `py.typed` so downstream type checkers use the inline annotations.
 
 ## Select inputs deliberately
 
@@ -91,7 +110,19 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 - `gene-tsv`: Entity-level export with one row per gene and zero-based coordinates `[start, end)`.
 - `domain-tsv`: Entity-level export with one row per domain and zero-based coordinates.
 - `clusterblast-tsv`: Entity-level export with ClusterBlast / KnownClusterBlast / SubClusterBlast hit rankings and pairings.
-- Comparative review (`compare`): Markdown or JSON (`schema_version: 0.1.0`) comparing feature counts, product deltas, diagnostic deltas, and intergenic gaps.
+- `assemblyline-tsv`: Local NRPS/PKS module and monomer calls plus separate Phase 2 core-mass candidate columns; unresolved chemistry remains null.
+- `assemblyline-json`: Versioned derived assembly-line evidence and conservative core-mass candidates (`schema_version: 0.2.0`).
+- `assemblyline-markdown`: Human-readable rendering of the same evidence and caveats.
+- `architecture-json`: Scoped domain-slot assessments (`schema_version: 0.1.0`); unsupported product classes are `not_applicable`.
+- `gff3`: Genome-browser GFF3 track with one-based inclusive coordinates and localized findings.
+- `bed`: BED6 track retaining zero-based half-open coordinates.
+- `provenance-json`: Deduplicated source/run manifest with raw antiSMASH metadata (`schema_version: 0.1.0`).
+- `provenance-tsv`: One row per source/hash manifest entry.
+- Comparative review (`compare`): Markdown or JSON (`schema_version: 0.2.0`) comparing feature counts, product deltas, diagnostic deltas, intergenic gaps, and provenance deltas.
+- `cohort product-matrix-tsv`: Deterministic member-by-product presence/count matrix; products are region-level labels.
+- `cohort domain-matrix-tsv`: Deterministic member-by-aSDomain presence/count matrix; Pfam hits are not mixed into this matrix.
+- `cohort json`: Versioned cohort envelope (`schema_version: 0.1.0`) with member inputs, source hashes, provenance summaries, normalized/raw column labels, matrices, and explicit skipped members.
+- `--cluster-by domain-jaccard`: Optional binary-domain Jaccard distance matrix, deterministic average-linkage leaf order, and Newick tree; it never runs unless explicitly requested.
 
 ## Maintain the codebase
 

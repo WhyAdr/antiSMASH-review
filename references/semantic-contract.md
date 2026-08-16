@@ -87,8 +87,10 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 ## Architecture assessment
 
 - `assess_architecture(record)` returns scoped assessments rather than one record-wide score. T1PKS/trans-AT expectations are region-scoped; NRPS expectations are module-scoped.
+- Only domain evidence from `nrps_pks_domains` (`domain.is_nrps_pks`) participates in architecture required slot scoring. Foreign tool domains (e.g. Pfam, TIGRFAM) do not satisfy NRPS/PKS slot requirements.
 - Canonical T1PKS requires parsed KS, AT, and ACP/PCP evidence. A trans-AT product label requires KS and ACP/PCP but explicitly exempts missing cis-AT evidence.
 - A canonical NRPS starter module requires A and ACP/PCP; non-starter modules additionally require C. Final, iterative, and incomplete flags remain antiSMASH evidence and are not silently re-derived.
+- Explicit NRPS module typing (`module_type="nrps"`) is required for module-scoped NRPS assessments. If an NRPS-labelled region has modules but none are NRPS-typed, it returns a region-scoped `not_applicable` assessment with preserved domain evidence.
 - Unsupported labels such as `NRPS-like`, T2PKS, T3PKS, prodigiosin, and other specialized classes return `not_applicable` until a class-specific rule is audited.
 - Product labels beyond the canonical trio (T1PKS, transAT-PKS, NRPS) intentionally return `not_applicable` with `score=None`. This includes `NRPS-like`, `T2PKS`, `T3PKS`, `prodigiosin`, `lanthipeptide`, and all other specialized classes. Class-specific architecture scoring is not performed for these labels, but raw region-scoped domain evidence (`observed_slots`, `evidence_domains`) is fully populated and preserved for downstream interpretation.
 - Architecture scores measure expected parsed-domain slot coverage, not probability of pathway completeness, activity, or metabolite production. The legacy `missing_nrps_pks_architecture` diagnostic remains available alongside the more specific missing-slot warning.
@@ -107,6 +109,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - The current contract reads recognized `.txt` sidecars directly inside those canonical directories; nested HTML/detail assets are ignored.
 - Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 6.x), `3` (antiSMASH 7.x), and `5` (antiSMASH 8.x).
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
+- Merging and attaching sidecar results is transactional: in strict mode, any duplicate result key or unattachable target fails fast before modifying records; in lenient mode, duplicate results emit `clusterblast_duplicate_result`, unattachable targets emit `clusterblast_attach_failed`, and all valid, attachable results are preserved and attached.
 - Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.
 - In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors are isolated per sidecar file: a failed sidecar emits a `clusterblast_parse_failed` diagnostic, while all successfully parsed sidecars are preserved, merged, and attached.
 - Retain `misc_feature` entries only as raw GenBank evidence; do not infer that they are ClusterBlast results.

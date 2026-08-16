@@ -110,6 +110,8 @@ def test_incomplete_module_is_ambiguous_and_unsupported_label_is_not_applicable(
     assert incomplete_assessment.status == "ambiguous"
     assert "antiSMASH marks" in " ".join(incomplete_assessment.caveats)
     assert unsupported_assessment.status == "not_applicable"
+    assert unsupported_assessment.observed_slots == ("KS",)
+    assert unsupported_assessment.evidence_domains == ("PKS_KS",)
 
 
 def test_edge_context_is_a_caveat_and_specific_warning_keeps_legacy_warning() -> None:
@@ -145,3 +147,19 @@ def test_unsupported_products_remain_not_applicable(product_label: str) -> None:
         assert assessment.status == "not_applicable", (
             f"{product_label} should be not_applicable, got {assessment.status}"
         )
+        assert assessment.observed_slots == ("KS",)
+        assert assessment.evidence_domains == ("PKS_KS",)
+
+
+def test_nrps_region_without_modules_preserves_domain_evidence() -> None:
+    record = _record(
+        [],
+        [_domain("D1", "AMP-binding", "CDS1")],
+        products=["NRPS"],
+    )
+
+    assessments = assess_architecture(record)
+    assert len(assessments) == 1
+    assert assessments[0].status == "not_applicable"
+    assert assessments[0].observed_slots == ("A",)
+    assert assessments[0].evidence_domains == ("AMP-binding",)

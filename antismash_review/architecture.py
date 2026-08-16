@@ -211,6 +211,7 @@ def _nrps_assessments(
     region = record.regions[region_index]
     modules = modules_in_collection(record, region)
     if not modules:
+        domains = domains_in_collection(record, region)
         return [
             ArchitectureAssessment(
                 product=product,
@@ -220,10 +221,10 @@ def _nrps_assessments(
                 status="not_applicable",
                 score=None,
                 expected_slots=(),
-                observed_slots=(),
+                observed_slots=domain_families(domains),
                 missing_slots=(),
                 exemptions=(),
-                evidence_domains=(),
+                evidence_domains=tuple(d.name for d in domains if d.name is not None),
                 caveats=("no explicit antiSMASH modules were available for an NRPS assessment",),
             )
         ]
@@ -285,6 +286,7 @@ def assess_architecture(record: Record) -> list[ArchitectureAssessment]:
                 assessments.extend(_nrps_assessments(record, region_index, product))
             else:
                 scope = f"region:{region.number if region.number is not None else region_index + 1}"
+                domains = domains_in_collection(record, region)
                 assessments.append(
                     ArchitectureAssessment(
                         product=product,
@@ -294,10 +296,12 @@ def assess_architecture(record: Record) -> list[ArchitectureAssessment]:
                         status="not_applicable",
                         score=None,
                         expected_slots=(),
-                        observed_slots=(),
+                        observed_slots=domain_families(domains),
                         missing_slots=(),
                         exemptions=(),
-                        evidence_domains=(),
+                        evidence_domains=tuple(
+                            domain.name for domain in domains if domain.name is not None
+                        ),
                         caveats=(
                             "no conservative Phase 3 domain expectation is registered "
                             "for this product class",

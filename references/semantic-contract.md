@@ -90,7 +90,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - Canonical T1PKS requires parsed KS, AT, and ACP/PCP evidence. A trans-AT product label requires KS and ACP/PCP but explicitly exempts missing cis-AT evidence.
 - A canonical NRPS starter module requires A and ACP/PCP; non-starter modules additionally require C. Final, iterative, and incomplete flags remain antiSMASH evidence and are not silently re-derived.
 - Unsupported labels such as `NRPS-like`, T2PKS, T3PKS, prodigiosin, and other specialized classes return `not_applicable` until a class-specific rule is audited.
-- Product labels beyond the canonical trio (T1PKS, transAT-PKS, NRPS) intentionally return `not_applicable`. This includes `NRPS-like`, `T2PKS`, `T3PKS`, `prodigiosin`, `lanthipeptide`, and all other specialized classes. Class-specific architecture scoring is not performed for these labels. Raw domain/module evidence remains available for qualified downstream interpretation by researchers or AI-assisted workflows.
+- Product labels beyond the canonical trio (T1PKS, transAT-PKS, NRPS) intentionally return `not_applicable` with `score=None`. This includes `NRPS-like`, `T2PKS`, `T3PKS`, `prodigiosin`, `lanthipeptide`, and all other specialized classes. Class-specific architecture scoring is not performed for these labels, but raw region-scoped domain evidence (`observed_slots`, `evidence_domains`) is fully populated and preserved for downstream interpretation.
 - Architecture scores measure expected parsed-domain slot coverage, not probability of pathway completeness, activity, or metabolite production. The legacy `missing_nrps_pks_architecture` diagnostic remains available alongside the more specific missing-slot warning.
 
 ## Genome-browser tracks
@@ -104,12 +104,11 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 ## ClusterBlast sidecar enrichment
 
 - Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
-- The current contract reads recognized `.txt` sidecars directly inside those canonical
-  directories; nested HTML/detail assets are ignored.
-- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules validating module schema `2` and result schema `5`.
+- The current contract reads recognized `.txt` sidecars directly inside those canonical directories; nested HTML/detail assets are ignored.
+- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 6.x), `3` (antiSMASH 7.x), and `5` (antiSMASH 8.x).
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
 - Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.
-- In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors emit a `clusterblast_parse_failed` diagnostic.
+- In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors are isolated per sidecar file: a failed sidecar emits a `clusterblast_parse_failed` diagnostic, while all successfully parsed sidecars are preserved, merged, and attached.
 - Retain `misc_feature` entries only as raw GenBank evidence; do not infer that they are ClusterBlast results.
 
 ## Comparative review

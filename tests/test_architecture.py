@@ -163,3 +163,39 @@ def test_nrps_region_without_modules_preserves_domain_evidence() -> None:
     assert assessments[0].status == "not_applicable"
     assert assessments[0].observed_slots == ("A",)
     assert assessments[0].evidence_domains == ("AMP-binding",)
+
+
+def test_architecture_ignores_non_nrps_pks_tool_domains_for_slot_scoring() -> None:
+    # Domain with name="PKS_KS" but tool="tigrfam" (not nrps_pks_domains)
+    record = _record(
+        [_module(100, 300, ["PKS1"], ["D1", "D2"], module_type="pks")],
+        [
+            _domain("D1", "PKS_KS", "PKS1", tool="tigrfam"),
+            _domain("D2", "PCP", "PKS1", tool="nrps_pks_domains"),
+        ],
+        products=["T1PKS"],
+    )
+
+    assessment = assess_architecture(record)[0]
+    assert assessment.status == "partial"
+    # PKS_KS from tigrfam is ignored, so KS is missing
+    assert "KS" in assessment.missing_slots
+    assert assessment.observed_slots == ("ACP/PCP",)
+
+
+def test_nrps_region_with_only_pks_modules_returns_not_applicable() -> None:
+    record = _record(
+        [_module(100, 300, ["PKS1"], ["D1"], module_type="pks")],
+        [_domain("D1", "AMP-binding", "PKS1")],
+        products=["NRPS"],
+    )
+
+    assessments = assess_architecture(record)
+    assert len(assessments) == 1
+    assert assessments[0].status == "not_applicable"
+    assert assessments[0].observed_slots == ("A",)
+    assert assessments[0].evidence_domains == ("AMP-binding",)
+    assert (
+        "no explicit antiSMASH NRPS modules were available for an NRPS assessment"
+        in assessments[0].caveats
+    )

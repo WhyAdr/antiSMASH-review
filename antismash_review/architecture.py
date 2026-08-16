@@ -188,7 +188,7 @@ def _region_assessment(
     expectation: ArchitectureExpectation,
 ) -> ArchitectureAssessment:
     region = record.regions[region_index]
-    domains = domains_in_collection(record, region)
+    domains = [d for d in domains_in_collection(record, region) if d.is_nrps_pks]
     caveats = tuple(
         item for item in (_region_edge_caveat(record, region_index),) if item is not None
     )
@@ -225,15 +225,17 @@ def _nrps_assessments(
                 missing_slots=(),
                 exemptions=(),
                 evidence_domains=tuple(d.name for d in domains if d.name is not None),
-                caveats=("no explicit antiSMASH modules were available for an NRPS assessment",),
+                caveats=(
+                    "no explicit antiSMASH NRPS modules were available for an NRPS assessment",
+                ),
             )
         ]
 
     assessments: list[ArchitectureAssessment] = []
     for module_index, module in enumerate(modules, start=1):
-        if module.module_type is not None and module.module_type.casefold() != "nrps":
+        if module.module_type is None or module.module_type.casefold() != "nrps":
             continue
-        domains = domains_for_module(record, module)
+        domains = [d for d in domains_for_module(record, module) if d.is_nrps_pks]
         expected = [
             DomainSlot("A", DOMAIN_FAMILIES["A"]),
             DomainSlot("ACP/PCP", DOMAIN_FAMILIES["ACP/PCP"]),
@@ -268,6 +270,26 @@ def _nrps_assessments(
                 ambiguous=not module.complete,
             )
         )
+    if not assessments:
+        domains = domains_in_collection(record, region)
+        return [
+            ArchitectureAssessment(
+                product=product,
+                scope=f"region:{region.number if region.number is not None else region_index + 1}",
+                region_number=region.number,
+                module_index=None,
+                status="not_applicable",
+                score=None,
+                expected_slots=(),
+                observed_slots=domain_families(domains),
+                missing_slots=(),
+                exemptions=(),
+                evidence_domains=tuple(d.name for d in domains if d.name is not None),
+                caveats=(
+                    "no explicit antiSMASH NRPS modules were available for an NRPS assessment",
+                ),
+            )
+        ]
     return assessments
 
 

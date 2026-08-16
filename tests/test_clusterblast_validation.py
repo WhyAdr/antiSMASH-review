@@ -343,3 +343,52 @@ def test_merge_and_attach_errors(tmp_path: Path) -> None:
     mismatch_result.record_id = "NON_EXISTENT"
     with pytest.raises(ClusterBlastParseError, match="expected one GenBank target"):
         attach_clusterblast_results(records, [mismatch_result])
+
+
+def test_clusterblast_json_fixtures_across_versions() -> None:
+    fixtures_dir = Path(__file__).parent / "fixtures" / "clusterblast"
+    v6_file = fixtures_dir / "clusterblast_v6_schema1.json"
+    v7_file = fixtures_dir / "clusterblast_v7_schema3.json"
+    v8_file = fixtures_dir / "clusterblast_v8_schema5.json"
+
+    v6_res = parse_clusterblast_json(v6_file)[0]
+    v7_res = parse_clusterblast_json(v7_file)[0]
+    v8_res = parse_clusterblast_json(v8_file)[0]
+
+    # Version-specific schemas
+    assert v6_res.module_schema_version == 1
+    assert v6_res.result_schema_version == 1
+    assert v6_res.rankings[0].similarity is None
+
+    assert v7_res.module_schema_version == 1
+    assert v7_res.result_schema_version == 3
+    assert v7_res.rankings[0].similarity == 42
+
+    assert v8_res.module_schema_version == 2
+    assert v8_res.result_schema_version == 5
+    assert v8_res.rankings[0].similarity == 42
+
+    # Normalized parity across shared fields
+    for res in (v6_res, v7_res, v8_res):
+        assert res.record_id == "SYNTH.1"
+        assert res.region_number == 1
+        assert res.search_type == "clusterblast"
+        assert len(res.rankings) == 1
+        hit = res.rankings[0]
+        assert hit.accession == "BGC0001000"
+        assert hit.description == "Synthetic reference cluster"
+        assert hit.cluster_type == "NRPS"
+        assert hit.num_hits == 1
+        assert hit.core_gene_hits == 1
+        assert hit.blast_score == 100.0
+        assert hit.synteny_score == 2
+        assert hit.core_bonus == 1
+        assert len(hit.pairings) == 1
+        pairing = hit.pairings[0]
+        assert pairing.query_gene == "SYN_CDS_1"
+        assert pairing.subject_gene == "orf1"
+        assert pairing.percent_identity == 80.0
+        assert pairing.blast_score == 100.0
+        assert pairing.percent_coverage == 90.0
+        assert pairing.evalue == 1e-10
+        assert pairing.subject_protein_id == "BGC0001000_1"

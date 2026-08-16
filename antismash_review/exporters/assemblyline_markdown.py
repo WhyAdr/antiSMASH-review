@@ -36,18 +36,24 @@ def render_assemblyline_markdown(records: list[Record]) -> str:
                         if prediction.mass is not None
                         else "- Mass: not calculated"
                     ),
-                    "",
-                    "| Module | Locus tags | Type | Calls | Domains | Release evidence |",
-                    "|---:|---|---|---|---|---|",
+                    (
+                        "| Module | Locus tags | Type | Raw calls | Incorporation | "
+                        "Pairing status | Integrity flags | Domains | Release evidence |"
+                    ),
+                    "|---:|---|---|---|---|---|---|---|---|",
                 ]
             )
             for module in prediction.modules:
-                calls = ", ".join(call.display for call in module.monomer_calls) or "?"
+                raw_calls = ", ".join(call.display for call in module.monomer_calls) or "?"
+                incorporation = module.incorporation_call.display or "?"
+                pairing_status = module.pairing_status
+                integrity = ", ".join(module.integrity_flags) or "none"
                 domains = ", ".join(module.domain_names) or "none resolved"
                 release = ", ".join(module.release_domains) or "none"
                 lines.append(
                     f"| {module.index} | {', '.join(module.locus_tags) or 'unassigned'} | "
-                    f"{module.module_type or 'unknown'} | {calls} | {domains} | {release} |"
+                    f"{module.module_type or 'unknown'} | {raw_calls} | {incorporation} | "
+                    f"{pairing_status} | {integrity} | {domains} | {release} |"
                 )
             if prediction.caveats:
                 lines.extend(["", "Caveats:"])

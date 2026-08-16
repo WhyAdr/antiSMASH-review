@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from pathlib import Path
 
@@ -195,11 +196,13 @@ def test_multi_cds_module_is_not_split_or_merged_by_proximity() -> None:
 
     assert len(predictions) == 2
     assert len(multi.modules) == 1
-    assert [call.monomer for call in multi.chain] == ["X", "Ser"]
+    assert [call.monomer for call in multi.modules[0].monomer_calls] == ["X", "Ser"]
+    assert multi.modules[0].pairing_status == "conflicting"
+    assert multi.chain[0].monomer is None
     assert "multi-CDS membership" in " ".join(multi.caveats)
     assert multi.mass is not None
     assert multi.mass.linear_core_mass_da is None
-    assert "X" in multi.mass.unresolved_monomers
+    assert "X" in multi.mass.unresolved_monomers or "?" in multi.mass.unresolved_monomers
 
 
 def test_distinct_cds_chains_in_one_region_are_not_collapsed() -> None:
@@ -230,11 +233,16 @@ def test_specificity_consensus_is_a_low_confidence_fallback() -> None:
         ],
     )
 
-    call = predict_assembly_lines(record)[0].chain[0]
+    prediction = predict_assembly_lines(record)[0]
+    call = prediction.chain[0]
+    module = prediction.modules[0]
 
     assert call.monomer == "Ser"
     assert call.source == "domain_specificity"
     assert call.confidence == "low"
+    assert module.pairing_status == "specificity_fallback"
+    assert module.raw_pairing_count == 0
+    assert module.unique_pairing_count == 0
     assert any("Minowa: Ser" in note for note in call.notes)
 
 
@@ -253,8 +261,10 @@ def test_conflicting_specificity_outputs_are_retained_as_ambiguous() -> None:
 
     prediction = predict_assembly_lines(record)[0]
 
-    assert [call.monomer for call in prediction.chain] == ["Ser", "Leu"]
-    assert all(call.confidence == "unresolved" for call in prediction.chain)
+    assert [call.monomer for call in prediction.modules[0].monomer_calls] == ["Ser", "Leu"]
+    assert len(prediction.chain) == 1
+    assert prediction.chain[0].confidence == "unresolved"
+    assert prediction.modules[0].pairing_status == "conflicting"
     assert "conflicting substrate specificity" in " ".join(prediction.modules[0].warnings)
 
 
@@ -396,18 +406,192 @@ def test_module_domain_resolution_does_not_guess_duplicate_ids() -> None:
     assert domains_for_module(record, module) == []
 
 
+def test_identical_duplicate_pairings_collapse_to_one_incorporation_slot() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Orn -> D-Orn", "Orn -> D-Orn"])],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+
+    assert len(module.monomer_calls) == 2
+    assert module.incorporation_call.monomer == "D-Orn"
+    assert [call.monomer for call in prediction.chain] == ["D-Orn"]
+    assert module.pairing_status == "identical_duplicate"
+    assert module.raw_pairing_count == 2
+    assert module.unique_pairing_count == 1
+    assert module.integrity_flags == ("duplicate_monomer_pairing",)
+
+
+def test_cross_cds_duplicate_pairings_generate_integrity_flags() -> None:
+    record = _record(
+        [
+            _module(
+                100,
+                200,
+                ["CDS_A", "CDS_B"],
+                ["D1"],
+                pairings=["Orn -> D-Orn", "Orn -> D-Orn"],
+            )
+        ],
+        [_domain("D1", "AMP-binding", "CDS_A")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+
+    assert module.multi_cds is True
+    assert "duplicate_monomer_pairing" in module.integrity_flags
+    assert "cross_cds_duplicate_monomer_pairing" in module.integrity_flags
+    assert len(prediction.chain) == 1
+    assert prediction.chain[0].monomer == "D-Orn"
+    assert any("identical monomer pairing" in caveat for caveat in prediction.caveats)
+
+
+def test_duplicate_pairings_affect_mass_count_as_single_incorporation() -> None:
+    record = _record(
+        [
+            _module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser", "Ser -> Ser"]),
+            _module(210, 310, ["CDS1"], ["D2"], pairings=["Leu -> Leu"]),
+        ],
+        [
+            _domain("D1", "AMP-binding", "CDS1", protein_start=10, protein_end=20),
+            _domain("D2", "AMP-binding", "CDS1", protein_start=30, protein_end=40),
+        ],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    mass = prediction.mass
+    assert mass is not None
+
+    water = 2 * 1.00782503223 + 15.99491461957
+    ser = 3 * 12.0 + 7 * 1.00782503223 + 14.00307400443 + 3 * 15.99491461957
+    leu = 6 * 12.0 + 13 * 1.00782503223 + 14.00307400443 + 2 * 15.99491461957
+    expected_linear = ser + leu - water
+
+    assert mass.total_monomers == 2
+    assert mass.resolved_monomers == 2
+    assert mass.coverage_fraction == 1.0
+    assert mass.linear_core_mass_da == pytest.approx(expected_linear, abs=1e-9)
+
+
+def test_conflicting_pairings_within_one_module_produce_unresolved_slot() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser", "Leu -> Leu"])],
+        [_domain("D1", "AMP-binding", "CDS1", protein_start=10, protein_end=20)],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+    mass = prediction.mass
+
+    assert len(module.monomer_calls) == 2
+    assert len(prediction.chain) == 1
+    assert prediction.chain[0].monomer is None
+    assert prediction.chain[0].confidence == "unresolved"
+    assert module.pairing_status == "conflicting"
+    assert module.raw_pairing_count == 2
+    assert module.unique_pairing_count == 2
+    assert mass is not None
+    assert mass.linear_core_mass_da is None
+    assert mass.total_monomers == 1
+    assert mass.resolved_monomers == 0
+    assert mass.coverage_fraction == 0.0
+
+
+def test_identical_monomers_across_separate_modules_remain_distinct() -> None:
+    record = _record(
+        [
+            _module(100, 200, ["CDS1"], ["D1"], pairings=["Orn -> D-Orn"]),
+            _module(210, 310, ["CDS1"], ["D2"], pairings=["Orn -> D-Orn"]),
+        ],
+        [
+            _domain("D1", "AMP-binding", "CDS1", protein_start=10, protein_end=20),
+            _domain("D2", "AMP-binding", "CDS1", protein_start=30, protein_end=40),
+        ],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+
+    assert len(prediction.chain) == 2
+    assert [call.monomer for call in prediction.chain] == ["D-Orn", "D-Orn"]
+    assert all(m.pairing_status == "single" for m in prediction.modules)
+
+
+def test_iterative_module_retains_monomer_identity_without_invented_repeat_count() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser"], iterative=True)],
+        [_domain("D1", "AMP-binding", "CDS1", protein_start=10, protein_end=20)],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    mass = prediction.mass
+
+    assert prediction.modules[0].incorporation_call.monomer == "Ser"
+    assert len(prediction.chain) == 1
+    assert mass is not None
+    assert mass.linear_core_mass_da is None
+    assert "iterative module incorporation count is unresolved" in mass.chemistry_scope
+
+
+def test_malformed_pairing_retains_raw_call_and_unresolved_incorporation() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["malformed_call"])],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+
+    assert len(module.monomer_calls) == 1
+    assert module.monomer_calls[0].confidence == "unresolved"
+    assert module.incorporation_call.confidence == "unresolved"
+    assert module.pairing_status == "unresolved"
+
+
 def test_assemblyline_exports_are_deterministic_and_versioned() -> None:
     record = _record(
-        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser"])],
-        [_domain("D1", "AMP-binding", "CDS1")],
+        [
+            _module(
+                100,
+                200,
+                ["CDS_A", "CDS_B"],
+                ["D1"],
+                pairings=["Orn -> D-Orn", "Orn -> D-Orn"],
+            )
+        ],
+        [_domain("D1", "AMP-binding", "CDS_A")],
     )
 
     json_output = dumps_assembly_lines([record])
     table_output = render_assemblyline_tsv([record])
     markdown_output = render_assemblyline_markdown([record])
 
-    assert '"schema_name": "antismash-review-assemblyline"' in json_output
+    parsed_json = json.loads(json_output)
+    assert parsed_json["schema_name"] == "antismash-review-assemblyline"
+    assert parsed_json["schema_version"] == "0.3.0"
+    pred_data = parsed_json["predictions"][0]
+    mod_data = pred_data["modules"][0]
+    assert mod_data["pairing_status"] == "identical_duplicate"
+    assert mod_data["raw_pairing_count"] == 2
+    assert mod_data["unique_pairing_count"] == 1
+    assert "cross_cds_duplicate_monomer_pairing" in mod_data["integrity_flags"]
+    assert mod_data["incorporation_call"]["monomer"] == "D-Orn"
+
     assert "record_id\tregion_number\tassembly_line" in table_output
-    assert "Ser" in markdown_output
+    assert "raw_call_index\traw_pairing_count\tunique_pairing_count" in table_output
+    assert "interpreted_monomer" in table_output
+    tsv_rows = [line for line in table_output.strip().split("\n") if line]
+    # 1 header + 2 raw call rows
+    assert len(tsv_rows) == 3
+
+    assert "Raw calls" in markdown_output
+    assert "Incorporation" in markdown_output
+    assert "Pairing status" in markdown_output
+    assert "Integrity flags" in markdown_output
+    assert "identical_duplicate" in markdown_output
+
     assert json_output == dumps_assembly_lines([record])
     assert table_output == render_assemblyline_tsv([record])
+    assert markdown_output == render_assemblyline_markdown([record])

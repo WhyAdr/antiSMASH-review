@@ -1,8 +1,9 @@
-"""Evidence-only interpretation of antiSMASH NRPS/PKS modules.
+"""Interpretation of antiSMASH NRPS/PKS modules and conservative core-mass estimation.
 
-This module deliberately stops at antiSMASH-derived module and monomer evidence.  It
-does not calculate chemistry, infer a final metabolite, or join separate CDS-local
-chains using genomic proximity.
+This module provides deterministic local assembly-line reconstruction from antiSMASH-derived
+module and domain evidence. It interprets module-level monomer incorporations while preserving
+raw annotation multiplicity, evaluates high-confidence NRPS core-mass candidates, and avoids
+inferring final metabolites, tailoring chemistry, or unverified cross-CDS joins.
 """
 
 from __future__ import annotations
@@ -19,6 +20,13 @@ from .models import Domain, Module, Record
 CallSource = Literal["module_pairing", "domain_specificity", "unknown"]
 CallConfidence = Literal["high", "medium", "low", "unresolved"]
 OrderingConfidence = Literal["high", "medium", "low"]
+PairingStatus = Literal[
+    "single",
+    "identical_duplicate",
+    "conflicting",
+    "specificity_fallback",
+    "unresolved",
+]
 
 _PAIRING_RE = re.compile(r"^\s*(?P<substrate>.*?)\s*->\s*(?P<monomer>.*?)\s*$")
 _CONSENSUS_RE = re.compile(r"^\s*substrate\s+consensus\s*:\s*(?P<value>.+?)\s*$", re.IGNORECASE)
@@ -71,7 +79,24 @@ class ModulePrediction:
     iterative: bool
     multi_cds: bool
     monomer_calls: tuple[MonomerCall, ...]
+    incorporation_call: MonomerCall
+    pairing_status: PairingStatus
+    raw_pairing_count: int
+    unique_pairing_count: int
+    integrity_flags: tuple[str, ...]
     release_domains: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class ModuleCallInterpretation:
+    """Interpreted collinear incorporation slot and integrity flags for one module."""
+
+    incorporation_call: MonomerCall
+    pairing_status: PairingStatus
+    raw_pairing_count: int
+    unique_pairing_count: int
+    integrity_flags: tuple[str, ...]
     warnings: tuple[str, ...]
 
 
@@ -252,8 +277,6 @@ def _calls_for_module(
     warnings: list[str] = []
     if module.monomer_pairings:
         calls = tuple(_pairing_call(raw) for raw in module.monomer_pairings)
-        if len(calls) > 1:
-            warnings.append("multiple module pairing calls retained; no single call selected")
         if any(call.confidence == "unresolved" for call in calls):
             warnings.append("module pairing contains unresolved monomer evidence")
         return calls, warnings
@@ -263,8 +286,162 @@ def _calls_for_module(
     return calls, warnings
 
 
+def _call_identity(call: MonomerCall) -> tuple[str | None, str | None]:
+    return call.substrate, call.monomer
+
+
+def _interpret_module_calls(
+    module: Module,
+    calls: tuple[MonomerCall, ...],
+) -> ModuleCallInterpretation:
+    if module.monomer_pairings:
+        raw_count = len(calls)
+        unique_identities = {_call_identity(call) for call in calls}
+        unique_count = len(unique_identities)
+
+        if raw_count == 1:
+            first = calls[0]
+            if first.confidence == "unresolved":
+                return ModuleCallInterpretation(
+                    incorporation_call=first,
+                    pairing_status="unresolved",
+                    raw_pairing_count=1,
+                    unique_pairing_count=1,
+                    integrity_flags=(),
+                    warnings=(),
+                )
+            return ModuleCallInterpretation(
+                incorporation_call=first,
+                pairing_status="single",
+                raw_pairing_count=1,
+                unique_pairing_count=1,
+                integrity_flags=(),
+                warnings=(),
+            )
+
+        if unique_count == 1:
+            first = calls[0]
+            note = f"{raw_count} identical raw module pairings collapsed to one incorporation slot"
+            incorporation_call = MonomerCall(
+                substrate=first.substrate,
+                monomer=first.monomer,
+                display=first.display,
+                source=first.source,
+                confidence=first.confidence,
+                notes=(note, *first.notes),
+            )
+            integrity_flags: tuple[str, ...]
+            warnings: tuple[str, ...]
+            if module.multi_cds:
+                integrity_flags = (
+                    "duplicate_monomer_pairing",
+                    "cross_cds_duplicate_monomer_pairing",
+                )
+                warnings = (
+                    "identical monomer pairing evidence occurs multiple times within one "
+                    "multi-CDS antiSMASH module; one incorporation slot is used for "
+                    "assembly-line interpretation; raw duplicates are retained",
+                )
+            else:
+                integrity_flags = ("duplicate_monomer_pairing",)
+                warnings = (
+                    "identical monomer pairing evidence occurs multiple times within one "
+                    "module; one incorporation slot is used for assembly-line interpretation; "
+                    "raw duplicates are retained",
+                )
+            return ModuleCallInterpretation(
+                incorporation_call=incorporation_call,
+                pairing_status="identical_duplicate",
+                raw_pairing_count=raw_count,
+                unique_pairing_count=1,
+                integrity_flags=integrity_flags,
+                warnings=warnings,
+            )
+
+        # Multiple distinct calls (conflicting)
+        alternatives = " | ".join(
+            f"{call.substrate or '?'} -> {call.monomer or '?'}" for call in calls
+        )
+        incorporation_call = MonomerCall(
+            substrate=None,
+            monomer=None,
+            display="?",
+            source="module_pairing",
+            confidence="unresolved",
+            notes=(f"conflicting module pairing evidence: {alternatives}",),
+        )
+        return ModuleCallInterpretation(
+            incorporation_call=incorporation_call,
+            pairing_status="conflicting",
+            raw_pairing_count=raw_count,
+            unique_pairing_count=unique_count,
+            integrity_flags=(),
+            warnings=(
+                "conflicting module pairing evidence retained; "
+                "no single incorporation call selected",
+            ),
+        )
+
+    # When module.monomer_pairings is empty (domain specificity fallback or unknown)
+    if calls and calls[0].source == "domain_specificity":
+        if len(calls) == 1:
+            first = calls[0]
+            status: PairingStatus = (
+                "specificity_fallback" if first.confidence != "unresolved" else "unresolved"
+            )
+            return ModuleCallInterpretation(
+                incorporation_call=first,
+                pairing_status=status,
+                raw_pairing_count=0,
+                unique_pairing_count=0,
+                integrity_flags=(),
+                warnings=(),
+            )
+        # Multiple conflicting specificity consensus calls
+        incorporation_call = MonomerCall(
+            substrate=None,
+            monomer=None,
+            display="?",
+            source="domain_specificity",
+            confidence="unresolved",
+            notes=("conflicting substrate specificity consensus evidence",),
+        )
+        return ModuleCallInterpretation(
+            incorporation_call=incorporation_call,
+            pairing_status="conflicting",
+            raw_pairing_count=0,
+            unique_pairing_count=0,
+            integrity_flags=(),
+            warnings=(),
+        )
+
+    # Unknown / no usable evidence
+    first = (
+        calls[0]
+        if calls
+        else MonomerCall(
+            substrate=None,
+            monomer=None,
+            display="?",
+            source="unknown",
+            confidence="unresolved",
+            notes=("no module pairing or supported specificity evidence",),
+        )
+    )
+    return ModuleCallInterpretation(
+        incorporation_call=first,
+        pairing_status="unresolved",
+        raw_pairing_count=0,
+        unique_pairing_count=0,
+        integrity_flags=(),
+        warnings=(),
+    )
+
+
 def _module_prediction(module: Module, index: int, domains: list[Domain]) -> ModulePrediction:
-    calls, warnings = _calls_for_module(module, domains)
+    raw_calls, warnings = _calls_for_module(module, domains)
+    interpretation = _interpret_module_calls(module, raw_calls)
+    warnings.extend(interpretation.warnings)
     resolved_ids = {domain.domain_id for domain in domains if domain.domain_id is not None}
     missing_ids = [domain_id for domain_id in module.domain_ids if domain_id not in resolved_ids]
     if missing_ids:
@@ -288,7 +465,12 @@ def _module_prediction(module: Module, index: int, domains: list[Domain]) -> Mod
         final=module.final,
         iterative=module.iterative,
         multi_cds=module.multi_cds,
-        monomer_calls=calls,
+        monomer_calls=raw_calls,
+        incorporation_call=interpretation.incorporation_call,
+        pairing_status=interpretation.pairing_status,
+        raw_pairing_count=interpretation.raw_pairing_count,
+        unique_pairing_count=interpretation.unique_pairing_count,
+        integrity_flags=interpretation.integrity_flags,
         release_domains=release_domains,
         warnings=tuple(warnings),
     )
@@ -394,6 +576,14 @@ def _prediction_caveats(
         caveats.append(
             "multi-CDS membership is retained from antiSMASH without a cross-CDS heuristic"
         )
+    if any(
+        "cross_cds_duplicate_monomer_pairing" in pred.integrity_flags for pred in module_predictions
+    ):
+        caveats.append(
+            "identical monomer pairing evidence occurs multiple times within one "
+            "multi-CDS antiSMASH module; one incorporation slot is used for "
+            "assembly-line interpretation; raw duplicates are retained"
+        )
     if any(module.iterative for module in modules):
         caveats.append("iterative module flags do not imply a one-module-one-incorporation count")
     if any(pred.release_domains for pred in module_predictions):
@@ -409,9 +599,8 @@ def _prediction_caveats(
             "PKS evidence is reported as a module call, not converted into peptide chemistry"
         )
     if any(
-        call.confidence == "unresolved"
+        prediction.incorporation_call.confidence == "unresolved"
         for prediction in module_predictions
-        for call in prediction.monomer_calls
     ):
         caveats.append("one or more monomer calls remain unresolved or ambiguous")
     return tuple(caveats)
@@ -524,7 +713,7 @@ def predict_assembly_lines(record: Record) -> list[AssemblyLinePrediction]:
             _module_prediction(module, module_index, domains_for_module(record, module))
             for module_index, (_source_index, module) in enumerate(ordered, start=1)
         ]
-        chain = tuple(call for module in module_predictions for call in module.monomer_calls)
+        chain = tuple(module.incorporation_call for module in module_predictions)
         mass = _estimate_core_mass(tuple(module_predictions), chain)
         predictions.append(
             AssemblyLinePrediction(

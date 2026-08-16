@@ -26,10 +26,18 @@ ASSEMBLYLINE_COLUMNS = (
     "iterative",
     "multi_cds",
     "domain_names",
+    "raw_call_index",
+    "raw_pairing_count",
+    "unique_pairing_count",
+    "pairing_status",
     "substrate",
     "monomer",
     "call_source",
     "call_confidence",
+    "interpreted_substrate",
+    "interpreted_monomer",
+    "interpreted_call_confidence",
+    "integrity_flags",
     "release_domains",
     "linear_core_mass_da",
     "head_to_tail_cyclic_candidate_mass_da",
@@ -51,12 +59,14 @@ def _row(
     prediction: AssemblyLinePrediction,
     module: ModulePrediction,
     call: MonomerCall | None,
+    raw_call_index: int,
     assembly_line: int,
 ) -> tuple[object, ...]:
     notes = (*module.warnings, *(call.notes if call else ()))
     mass = prediction.mass
     if mass is not None:
         notes = (*notes, *(f"unresolved monomer: {item}" for item in mass.unresolved_monomers))
+    inc = module.incorporation_call
     return (
         prediction.record_id,
         _optional(prediction.region_number),
@@ -70,10 +80,18 @@ def _row(
         str(module.iterative).lower(),
         str(module.multi_cds).lower(),
         _list_cell(module.domain_names),
+        raw_call_index,
+        module.raw_pairing_count,
+        module.unique_pairing_count,
+        module.pairing_status,
         _optional(call.substrate if call else None),
         _optional(call.monomer if call else None),
         _optional(call.source if call else None),
         _optional(call.confidence if call else None),
+        _optional(inc.substrate),
+        _optional(inc.monomer),
+        _optional(inc.confidence),
+        _list_cell(module.integrity_flags),
         _list_cell(module.release_domains),
         _optional(mass.linear_core_mass_da if mass else None),
         _optional(mass.head_to_tail_cyclic_candidate_mass_da if mass else None),
@@ -91,6 +109,6 @@ def render_assemblyline_tsv(records: list[Record]) -> str:
         for assembly_line, prediction in enumerate(predict_assembly_lines(record), start=1):
             for module in prediction.modules:
                 calls = module.monomer_calls or (None,)
-                for call in calls:
-                    writer.writerow(_row(prediction, module, call, assembly_line))
+                for raw_call_index, call in enumerate(calls, start=1):
+                    writer.writerow(_row(prediction, module, call, raw_call_index, assembly_line))
     return output.getvalue()

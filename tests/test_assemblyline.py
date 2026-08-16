@@ -287,8 +287,9 @@ def test_fully_resolved_peptide_has_separate_linear_and_cyclic_candidates() -> N
     assert mass is not None
 
     water = 2 * 1.00782503223 + 15.99491461957
-    ser = 3 * 12.0 + 5 * 1.00782503223 + 14.00307400443 + 2 * 15.99491461957
-    leu = 6 * 12.0 + 11 * 1.00782503223 + 14.00307400443 + 15.99491461957
+    # Free Ser: C3H7NO3, Free Leu: C6H13NO2
+    ser = 3 * 12.0 + 7 * 1.00782503223 + 14.00307400443 + 3 * 15.99491461957
+    leu = 6 * 12.0 + 13 * 1.00782503223 + 14.00307400443 + 2 * 15.99491461957
     expected_linear = ser + leu - water
     assert mass.linear_core_mass_da == pytest.approx(expected_linear, abs=1e-9)
     assert mass.head_to_tail_cyclic_candidate_mass_da == pytest.approx(

@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from .chemistry import free_monomer_mass
+from .chemistry import WATER_MASS, free_monomer_mass
 from .models import Domain, Module, Record
 
 CallSource = Literal["module_pairing", "domain_specificity", "unknown"]
@@ -452,7 +452,7 @@ def _estimate_core_mass(
     linear: float | None = None
     cyclic: float | None = None
     if complete:
-        water_mass = 2 * 1.00782503223 + 15.99491461957
+        water_mass = WATER_MASS
         linear = sum(masses) - (total - 1) * water_mass
         cyclic = linear - water_mass
 

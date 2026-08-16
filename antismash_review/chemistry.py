@@ -16,27 +16,29 @@ _ATOMIC_MASSES = {
     "S": 31.9720711744,
 }
 
+# Free amino-acid formulas (neutral, uncharged).  The assemblyline mass formula
+# subtracts one water per peptide bond: linear = sum(free) - (N-1)*water.
 _FORMULAS: dict[str, dict[str, int]] = {
-    "Ala": {"C": 3, "H": 5, "N": 1, "O": 1},
-    "Arg": {"C": 6, "H": 12, "N": 4, "O": 1},
-    "Asn": {"C": 4, "H": 6, "N": 2, "O": 2},
-    "Asp": {"C": 4, "H": 5, "N": 1, "O": 3},
-    "Cys": {"C": 3, "H": 5, "N": 1, "O": 1, "S": 1},
-    "Gln": {"C": 5, "H": 8, "N": 2, "O": 2},
-    "Glu": {"C": 5, "H": 7, "N": 1, "O": 3},
-    "Gly": {"C": 2, "H": 3, "N": 1, "O": 1},
-    "His": {"C": 6, "H": 7, "N": 3, "O": 1},
-    "Ile": {"C": 6, "H": 11, "N": 1, "O": 1},
-    "Leu": {"C": 6, "H": 11, "N": 1, "O": 1},
-    "Lys": {"C": 6, "H": 12, "N": 2, "O": 1},
-    "Met": {"C": 5, "H": 9, "N": 1, "O": 1, "S": 1},
-    "Phe": {"C": 9, "H": 9, "N": 1, "O": 1},
-    "Pro": {"C": 5, "H": 7, "N": 1, "O": 1},
-    "Ser": {"C": 3, "H": 5, "N": 1, "O": 2},
-    "Thr": {"C": 4, "H": 7, "N": 1, "O": 2},
-    "Trp": {"C": 11, "H": 10, "N": 2, "O": 1},
-    "Tyr": {"C": 9, "H": 9, "N": 1, "O": 2},
-    "Val": {"C": 5, "H": 9, "N": 1, "O": 1},
+    "Ala": {"C": 3, "H": 7, "N": 1, "O": 2},
+    "Arg": {"C": 6, "H": 14, "N": 4, "O": 2},
+    "Asn": {"C": 4, "H": 8, "N": 2, "O": 3},
+    "Asp": {"C": 4, "H": 7, "N": 1, "O": 4},
+    "Cys": {"C": 3, "H": 7, "N": 1, "O": 2, "S": 1},
+    "Gln": {"C": 5, "H": 10, "N": 2, "O": 3},
+    "Glu": {"C": 5, "H": 9, "N": 1, "O": 4},
+    "Gly": {"C": 2, "H": 5, "N": 1, "O": 2},
+    "His": {"C": 6, "H": 9, "N": 3, "O": 2},
+    "Ile": {"C": 6, "H": 13, "N": 1, "O": 2},
+    "Leu": {"C": 6, "H": 13, "N": 1, "O": 2},
+    "Lys": {"C": 6, "H": 14, "N": 2, "O": 2},
+    "Met": {"C": 5, "H": 11, "N": 1, "O": 2, "S": 1},
+    "Phe": {"C": 9, "H": 11, "N": 1, "O": 2},
+    "Pro": {"C": 5, "H": 9, "N": 1, "O": 2},
+    "Ser": {"C": 3, "H": 7, "N": 1, "O": 3},
+    "Thr": {"C": 4, "H": 9, "N": 1, "O": 3},
+    "Trp": {"C": 11, "H": 12, "N": 2, "O": 2},
+    "Tyr": {"C": 9, "H": 11, "N": 1, "O": 3},
+    "Val": {"C": 5, "H": 11, "N": 1, "O": 2},
 }
 
 _ONE_LETTER = {
@@ -67,6 +69,9 @@ _STEREO_PREFIX_RE = re.compile(r"^(?:l|d)[- ](?P<base>.+)$", re.IGNORECASE)
 def _formula_mass(formula: dict[str, int]) -> float:
     return sum(_ATOMIC_MASSES[element] * count for element, count in formula.items())
 
+
+# Centralized water mass for peptide-bond dehydration.
+WATER_MASS: float = 2 * _ATOMIC_MASSES["H"] + _ATOMIC_MASSES["O"]
 
 FREE_MONOMER_MASSES: dict[str, float] = {
     name: _formula_mass(formula) for name, formula in _FORMULAS.items()

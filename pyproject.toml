@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "antismash-review"
-version = "0.1.0"
+version = "0.2.0"
 description = "Version-aware review and export of antiSMASH result files"
 requires-python = ">=3.10"
 dependencies = ["biopython>=1.81,<2"]

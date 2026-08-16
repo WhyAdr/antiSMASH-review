@@ -105,7 +105,7 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 ## Choose an export
 
 - `markdown`: Concise human review with ClusterBlast tables and review diagnostics.
-- `json`: Versioned, structured review envelope (`schema_version: 0.2.0`).
+- `json`: Versioned, structured review envelope (`schema_version: 0.3.0`; includes `antismash_provenance`).
 - `tsv`: Compact one-row-per-record summary.
 - `gene-tsv`: Entity-level export with one row per gene and zero-based coordinates `[start, end)`.
 - `domain-tsv`: Entity-level export with one row per domain and zero-based coordinates.
@@ -113,7 +113,7 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 - `assemblyline-tsv`: Local NRPS/PKS module and monomer calls plus separate Phase 2 core-mass candidate columns; unresolved chemistry remains null.
 - `assemblyline-json`: Versioned derived assembly-line evidence and conservative core-mass candidates (`schema_version: 0.2.0`).
 - `assemblyline-markdown`: Human-readable rendering of the same evidence and caveats.
-- `architecture-json`: Scoped domain-slot assessments (`schema_version: 0.1.0`); unsupported product classes are `not_applicable`.
+- `architecture-json`: Scoped domain-slot assessments (`schema_version: 0.1.0`); product classes beyond T1PKS, transAT-PKS, and NRPS are intentionally `not_applicable`; domain evidence is exported for downstream interpretation.
 - `gff3`: Genome-browser GFF3 track with one-based inclusive coordinates and localized findings.
 - `bed`: BED6 track retaining zero-based half-open coordinates.
 - `provenance-json`: Deduplicated source/run manifest with raw antiSMASH metadata (`schema_version: 0.1.0`).

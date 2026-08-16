@@ -610,13 +610,17 @@ def attach_clusterblast_results(
             if not lenient:
                 raise ClusterBlastParseError(msg)
             if records:
-                records[0].diagnostics.append(
+                target_record = next(
+                    (r for r in records if result.record_id in {r.record_id, r.name}),
+                    records[0],
+                )
+                target_record.diagnostics.append(
                     Diagnostic(
                         code="clusterblast_attach_failed",
                         severity=Severity.WARNING,
                         message=msg,
                         source=str(result.source_path),
-                        record_id=records[0].record_id,
+                        record_id=result.record_id,
                     )
                 )
         else:

@@ -350,17 +350,19 @@ def test_clusterblast_json_fixtures_across_versions() -> None:
     v6_file = fixtures_dir / "clusterblast_v6_schema1.json"
     v7_file = fixtures_dir / "clusterblast_v7_schema3.json"
     v8_file = fixtures_dir / "clusterblast_v8_schema5.json"
+    legacy_file = fixtures_dir / "clusterblast_legacy_module_schema1.json"
 
     v6_res = parse_clusterblast_json(v6_file)[0]
     v7_res = parse_clusterblast_json(v7_file)[0]
     v8_res = parse_clusterblast_json(v8_file)[0]
+    legacy_res = parse_clusterblast_json(legacy_file)[0]
 
-    # Version-specific schemas
-    assert v6_res.module_schema_version == 1
+    # Version-specific schemas matching upstream antiSMASH serializers
+    assert v6_res.module_schema_version == 2
     assert v6_res.result_schema_version == 1
     assert v6_res.rankings[0].similarity is None
 
-    assert v7_res.module_schema_version == 1
+    assert v7_res.module_schema_version == 2
     assert v7_res.result_schema_version == 3
     assert v7_res.rankings[0].similarity == 42
 
@@ -368,8 +370,11 @@ def test_clusterblast_json_fixtures_across_versions() -> None:
     assert v8_res.result_schema_version == 5
     assert v8_res.rankings[0].similarity == 42
 
+    assert legacy_res.module_schema_version == 1
+    assert legacy_res.result_schema_version == 1
+
     # Normalized parity across shared fields
-    for res in (v6_res, v7_res, v8_res):
+    for res in (v6_res, v7_res, v8_res, legacy_res):
         assert res.record_id == "SYNTH.1"
         assert res.region_number == 1
         assert res.search_type == "clusterblast"

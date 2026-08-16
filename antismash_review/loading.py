@@ -72,7 +72,7 @@ def load_review_input(
                     severity=Severity.WARNING,
                     message=str(exc),
                     source=str(source),
-                    record_id=records[0].record_id,
+                    record_id=None,
                 )
             )
 

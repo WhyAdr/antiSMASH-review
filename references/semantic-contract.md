@@ -49,7 +49,9 @@
 | `missing_nrps_pks_architecture` | WARNING | Region products contain NRPS/PKS terms but no aSTool=nrps_pks_domains domains were parsed | Does not prove the annotation is wrong; the relevant domains may be in a different record |
 | `pseudogene_in_cluster` | WARNING | A standalone `/gene` with `/pseudo` overlaps one or more regions | Does not prove a frameshift, functional loss, or compound identity |
 | `unrecognized_feature_type` | NOTICE | A non-structural feature type is retained only in `raw_features` | Does not mean the source annotation is invalid; it marks adapter coverage |
-| `clusterblast_parse_failed` | WARNING (lenient) | A recognized ClusterBlast text or JSON sidecar could not be parsed or attached safely | Does not repair or silently discard the malformed sidecar; strict mode fails instead |
+| `clusterblast_parse_failed` | WARNING (lenient) | A recognized ClusterBlast text or JSON sidecar could not be parsed safely | Does not repair or silently discard the malformed sidecar; strict mode fails instead |
+| `clusterblast_duplicate_result` | WARNING (lenient) | A duplicate ClusterBlast result was encountered for the same key during lenient merge | The duplicate entry is skipped while preserving all unique results |
+| `clusterblast_attach_failed` | WARNING (lenient) | A ClusterBlast result did not match exactly one target GenBank record and region | The unattachable result is reported on the matching record while valid results attach |
 
 Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated Pfam totals already expose the underlying representation.
 
@@ -129,7 +131,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 
 ## Provenance
 
-- Parsed records retain all antiSMASH structured-comment keys and repeated values in a typed internal provenance object. Biopython's structured-comment mapping is supplemented with the raw GenBank comment block when repeated keys would otherwise be lost. The existing record JSON envelope omits that object until a deliberate record-schema migration.
+- Parsed records retain all antiSMASH structured-comment keys and repeated values in a typed internal provenance object. Biopython's structured-comment mapping is supplemented with the raw GenBank comment block when repeated keys would otherwise be lost. The record JSON envelope embeds `antismash_provenance` on each record (schema version `0.3.0`).
 - The dedicated provenance manifest reports source paths, SHA-256 hashes, record IDs, review-tool version, normalized antiSMASH version/run date fields when present, database-like fields, and raw unknown keys.
 - Missing metadata remain unknown. A comparison provenance delta uses `True`/`False` only when both values are present; otherwise it uses `None` and never calls two absent fields unchanged.
 - Comparison schema version is `0.2.0` because matched record comparisons now carry an explicit provenance delta.

@@ -4,7 +4,7 @@
       "id": "SYNTH.1",
       "modules": {
         "antismash.modules.clusterblast": {
-          "schema_version": 1,
+          "schema_version": 2,
           "record_id": "SYNTH.1",
           "general": {
             "schema_version": 3,

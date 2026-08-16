@@ -375,3 +375,38 @@ def test_lenient_loading_retains_valid_sidecars_when_duplicate_results_occur(
     attach_clusterblast_results(records, merged, lenient=True)
     assert len(records[0].clusterblast_results) == 1
     assert records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"
+
+
+def test_lenient_loading_diagnostic_provenance_multi_record(tmp_path: Path) -> None:
+    rec1_path = write_synthetic_genbank(tmp_path / "rec1.gbk")
+    rec1 = parse_genbank(rec1_path)[0]
+    rec2_path = write_synthetic_genbank(tmp_path / "rec2.gbk")
+    rec2 = parse_genbank(rec2_path)[0]
+    rec2.record_id = "RECORD_B"
+    rec2.name = "RECORD_B"
+    records = [rec1, rec2]
+
+    cb_file = tmp_path / "contig_1_c99.txt"
+    cb_file.write_text(
+        "ClusterBlast scores for RECORD_B\n"
+        "Significant hits:\n"
+        "1. HIT-B\tHit description\n"
+        "Details:\n"
+        "1. HIT-B\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 10.0\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSUBJ_1\t90.0\t10.0\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+    result = parse_clusterblast_text(cb_file, search_type="clusterblast")
+
+    attach_clusterblast_results(records, [result], lenient=True)
+
+    # Diagnostic must be attached to RECORD_B (rec2), not rec1
+    assert not any(d.code == "clusterblast_attach_failed" for d in rec1.diagnostics)
+    attach_diags = [d for d in rec2.diagnostics if d.code == "clusterblast_attach_failed"]
+    assert len(attach_diags) == 1
+    assert attach_diags[0].record_id == "RECORD_B"

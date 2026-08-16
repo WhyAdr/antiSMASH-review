@@ -27,7 +27,7 @@ The assessment is strong and its main scientific finding is correct. The patch s
 
 ```text
 COMPLETED IN v0.2.0:
-P0  Reproduce and lock the baseline (129 -> 141 tests passing)
+P0  Reproduce and lock the baseline (129 -> 144 tests passing)
 P1  Correct free-monomer chemistry, centralize water mass, and guard 1-residue cyclic mass
 P2  Add external-truth chemistry regression tests (1e-6 tolerance, anti-regression tests)
 --  Embed provenance in record JSON envelope (schema 0.3.0)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from antismash_review.architecture import assess_architecture
 from antismash_review.review import review_record
 from tests.test_assemblyline import _domain, _module, _record
@@ -124,3 +126,22 @@ def test_edge_context_is_a_caveat_and_specific_warning_keeps_legacy_warning() ->
     assert "assembly truncation" in " ".join(assessment.caveats)
     assert "architecture_core_domain_missing" in codes
     assert "missing_nrps_pks_architecture" not in codes
+
+
+@pytest.mark.parametrize(
+    "product_label",
+    ["NRPS-like", "T2PKS", "T3PKS", "prodigiosin", "lanthipeptide-class-i"],
+)
+def test_unsupported_products_remain_not_applicable(product_label: str) -> None:
+    """Product labels beyond the canonical trio must remain not_applicable by design."""
+    record = _record(
+        [_module(100, 300, ["CDS1"], ["D1"], module_type="pks")],
+        [_domain("D1", "PKS_KS", "CDS1")],
+        products=[product_label],
+    )
+
+    assessments = assess_architecture(record)
+    for assessment in assessments:
+        assert assessment.status == "not_applicable", (
+            f"{product_label} should be not_applicable, got {assessment.status}"
+        )

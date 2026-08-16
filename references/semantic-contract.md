@@ -60,7 +60,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - `loading.py` owns the shared GenBank plus ClusterBlast enrichment path used by inspection and comparison; the compatibility loader in `cli.py` is only a wrapper.
 - Native antiSMASH JSON alone remains unsupported as primary input; when a GenBank input is provided alongside JSON or sidecar text directories, sidecar enrichment parses and attaches ClusterBlast results.
 - Markdown and the top-level JSON diagnostics include evidence-scoped review diagnostics.
-- The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.2.0"`, and `parser_version`.
+- The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.3.0"`, and `parser_version`, and embeds `antismash_provenance` on each record.
 - TSV (`--format tsv`) is a compact one-row-per-record summary.
 - Entity-level TSV exports (`--format gene-tsv`, `--format domain-tsv`, and `--format clusterblast-tsv`) export one row per entity. All entity TSV coordinates (`start`, `end`) are the model's zero-based, half-open coordinates `[start, end)` (never silently converted to GenBank one-based display coordinates).
 
@@ -73,7 +73,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - When pairings are absent, only `specificity="substrate consensus: ..."` values on AMP-binding/A-like domains are interpreted as low-confidence fallback calls. Other specificity values remain raw notes; conflicting consensus values remain ambiguous.
 - Thioesterase-like evidence is reported as release-domain evidence with release mode unknown. A terminal or final module flag does not prove hydrolysis or cyclization.
 - Assembly-line mass values are separate modeled candidates, not fields on the parsed evidence objects. The dedicated `antismash-review-assemblyline` JSON schema is version `0.2.0` after the Phase 2 chemistry gate.
-- Core-mass candidates are formula-derived only for fully resolved, high-confidence proteinogenic amino-acid-like NRPS chains. Unknown `X`, non-proteinogenic or PKS calls, starter/acyl uncertainty, iterative modules, low-confidence specificity fallbacks, and tailoring chemistry make the full-core candidates null.
+- Core-mass candidates are formula-derived only for fully resolved, high-confidence proteinogenic amino-acid-like NRPS chains using genuine free amino-acid formulas with peptide dehydration. Unknown `X`, non-proteinogenic calls, PKS modules, starter/acyl uncertainty, iterative modules, low-confidence specificity fallbacks, and tailoring chemistry make the full-core candidates null.
 - When chemistry is complete enough, linear and head-to-tail cyclic candidate values are emitted separately with `topology_assumption="unknown"`; neither value is the measured final metabolite mass.
 
 ## Architecture assessment
@@ -82,6 +82,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - Canonical T1PKS requires parsed KS, AT, and ACP/PCP evidence. A trans-AT product label requires KS and ACP/PCP but explicitly exempts missing cis-AT evidence.
 - A canonical NRPS starter module requires A and ACP/PCP; non-starter modules additionally require C. Final, iterative, and incomplete flags remain antiSMASH evidence and are not silently re-derived.
 - Unsupported labels such as `NRPS-like`, T2PKS, T3PKS, prodigiosin, and other specialized classes return `not_applicable` until a class-specific rule is audited.
+- Product labels beyond the canonical trio (T1PKS, transAT-PKS, NRPS) intentionally return `not_applicable`. This includes `NRPS-like`, `T2PKS`, `T3PKS`, `prodigiosin`, `lanthipeptide`, and all other specialized classes. Class-specific architecture scoring is not performed for these labels. Raw domain/module evidence remains available for qualified downstream interpretation by researchers or AI-assisted workflows.
 - Architecture scores measure expected parsed-domain slot coverage, not probability of pathway completeness, activity, or metabolite production. The legacy `missing_nrps_pks_architecture` diagnostic remains available alongside the more specific missing-slot warning.
 
 ## Genome-browser tracks

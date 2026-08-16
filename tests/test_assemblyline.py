@@ -13,6 +13,7 @@ from antismash_review.assemblyline import (
 from antismash_review.exporters.assemblyline_json import dumps_assembly_lines
 from antismash_review.exporters.assemblyline_markdown import render_assemblyline_markdown
 from antismash_review.exporters.assemblyline_table import render_assemblyline_tsv
+from antismash_review.genbank import parse_genbank
 from antismash_review.models import (
     CollectionFeature,
     Domain,
@@ -21,6 +22,7 @@ from antismash_review.models import (
     Module,
     Record,
 )
+from tests.fixtures.build_fixture import write_synthetic_cross_cds_monomer_genbank
 
 
 def _location(start: int, end: int, strand: int | None = 1) -> Location:
@@ -595,3 +597,104 @@ def test_assemblyline_exports_are_deterministic_and_versioned() -> None:
     assert json_output == dumps_assembly_lines([record])
     assert table_output == render_assemblyline_tsv([record])
     assert markdown_output == render_assemblyline_markdown([record])
+
+
+def test_different_malformed_pairings_are_not_classified_as_identical_duplicates() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["malformed_alpha", "malformed_beta"])],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+
+    assert len(module.monomer_calls) == 2
+    assert module.raw_pairing_count == 2
+    assert module.unique_pairing_count == 2
+    assert module.pairing_status == "conflicting"
+    assert module.integrity_flags == ()
+    assert module.incorporation_call.confidence == "unresolved"
+    assert module.incorporation_call.display == "?"
+
+
+def test_identical_malformed_pairings_collapse_to_one_unresolved_slot() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["malformed_same", "malformed_same"])],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    module = prediction.modules[0]
+
+    assert len(module.monomer_calls) == 2
+    assert module.raw_pairing_count == 2
+    assert module.unique_pairing_count == 1
+    assert module.pairing_status == "identical_duplicate"
+    assert module.integrity_flags == ("duplicate_monomer_pairing",)
+    assert module.incorporation_call.confidence == "unresolved"
+    assert module.incorporation_call.display == "?"
+
+
+def test_incomplete_module_blocks_mass_estimate() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser"], complete=False)],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    assert prediction.modules[0].complete is False
+    assert prediction.mass is not None
+    assert prediction.mass.linear_core_mass_da is None
+    assert "one or more antiSMASH modules are marked incomplete" in prediction.mass.chemistry_scope
+
+
+def test_missing_domain_reference_blocks_mass_estimate() -> None:
+    # Module references D_MISSING which is not in record.domains
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D_MISSING"], pairings=["Ser -> Ser"])],
+        [_domain("D1", "AMP-binding", "CDS1")],
+    )
+
+    prediction = predict_assembly_lines(record)[0]
+    assert prediction.modules[0].missing_domain_ids == ("D_MISSING",)
+    assert prediction.mass is not None
+    assert prediction.mass.linear_core_mass_da is None
+    assert (
+        "one or more modules have unresolved domain references" in prediction.mass.chemistry_scope
+    )
+
+
+def test_genbank_duplicate_monomer_pairings_end_to_end(tmp_path: Path) -> None:
+    gbk_path = write_synthetic_cross_cds_monomer_genbank(tmp_path / "cross.gbk")
+    records = parse_genbank(gbk_path)
+    assert len(records) == 1
+    record = records[0]
+
+    # Verify parsed module evidence
+    assert len(record.modules) == 1
+    mod = record.modules[0]
+    assert mod.multi_cds is True
+    assert mod.locus_tags == ["CDS_A", "CDS_B"]
+    assert len(mod.monomer_pairings) == 2
+    assert mod.monomer_pairings == ["Orn -> D-Orn", "Orn -> D-Orn"]
+
+    # Verify assembly-line derived prediction
+    predictions = predict_assembly_lines(record)
+    assert len(predictions) == 1
+    pred = predictions[0]
+    assert len(pred.chain) == 1
+    assert pred.chain[0].monomer == "D-Orn"
+    assert pred.chain[0].confidence == "high"
+
+    module_pred = pred.modules[0]
+    assert module_pred.raw_pairing_count == 2
+    assert module_pred.unique_pairing_count == 1
+    assert module_pred.pairing_status == "identical_duplicate"
+    assert "cross_cds_duplicate_monomer_pairing" in module_pred.integrity_flags
+
+    # Verify mass calculation: D-Orn is non-proteinogenic so candidate mass is null
+    assert pred.mass is not None
+    assert pred.mass.total_monomers == 1
+    assert pred.mass.resolved_monomers == 0
+    assert pred.mass.linear_core_mass_da is None
+    assert pred.mass.unresolved_monomers == ("D-Orn",)

@@ -73,6 +73,7 @@ class ModulePrediction:
     locus_tags: tuple[str, ...]
     domain_ids: tuple[str, ...]
     domain_names: tuple[str, ...]
+    missing_domain_ids: tuple[str, ...]
     complete: bool
     starter: bool
     final: bool
@@ -286,8 +287,10 @@ def _calls_for_module(
     return calls, warnings
 
 
-def _call_identity(call: MonomerCall) -> tuple[str | None, str | None]:
-    return call.substrate, call.monomer
+def _call_identity(call: MonomerCall) -> tuple[object, ...]:
+    if call.confidence != "unresolved" and call.substrate is not None and call.monomer is not None:
+        return ("parsed", call.substrate, call.monomer)
+    return ("unresolved", call.substrate, call.monomer, call.notes)
 
 
 def _interpret_module_calls(
@@ -460,6 +463,7 @@ def _module_prediction(module: Module, index: int, domains: list[Domain]) -> Mod
         locus_tags=tuple(module.locus_tags),
         domain_ids=tuple(module.domain_ids),
         domain_names=tuple(domain.name for domain in domains if domain.name is not None),
+        missing_domain_ids=tuple(missing_ids),
         complete=module.complete,
         starter=module.starter,
         final=module.final,
@@ -630,6 +634,10 @@ def _estimate_core_mass(
         module_type = module.module_type.casefold() if module.module_type else None
         if module_type != "nrps":
             reasons.append("non-NRPS or unknown module chemistry is present")
+        if not module.complete:
+            reasons.append("one or more antiSMASH modules are marked incomplete")
+        if module.missing_domain_ids:
+            reasons.append("one or more modules have unresolved domain references")
         if module.iterative:
             reasons.append("iterative module incorporation count is unresolved")
         if module.starter:

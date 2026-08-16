@@ -166,3 +166,114 @@ def write_synthetic_genbank(path: Path) -> Path:
         )
         SeqIO.write(record, path, "genbank")
     return path
+
+
+def write_synthetic_cross_cds_monomer_genbank(path: Path) -> Path:
+    """Write a synthetic GenBank record with a multi-CDS module containing duplicate pairings."""
+    record = SeqRecord(
+        Seq("A" * 600),
+        id="SYNTH_CROSS.1",
+        name="SYNTH_CROSS.1",
+        description="synthetic cross-CDS duplicate monomer pairing fixture",
+    )
+    record.annotations["molecule_type"] = "DNA"
+    record.annotations["topology"] = "linear"
+    record.annotations["structured_comment"] = {"antiSMASH-Data": {"Version": "8.0.4"}}
+    record.features = [
+        _feature("source", 0, 600, {"organism": ["synthetic bacterium"]}),
+        _feature(
+            "region",
+            0,
+            600,
+            {
+                "region_number": ["1"],
+                "candidate_cluster_numbers": ["1"],
+                "product": ["NRPS"],
+            },
+        ),
+        _feature(
+            "cand_cluster",
+            0,
+            600,
+            {
+                "candidate_cluster_number": ["1"],
+                "protoclusters": ["1"],
+                "product": ["NRPS"],
+            },
+        ),
+        _feature(
+            "protocluster",
+            0,
+            600,
+            {
+                "protocluster_number": ["1"],
+                "candidate_cluster_numbers": ["1"],
+            },
+        ),
+        _feature("proto_core", 0, 500, {"protocluster_number": ["1"]}),
+        _feature(
+            "CDS",
+            50,
+            250,
+            {
+                "locus_tag": ["CDS_A"],
+                "gene_kind": ["biosynthetic"],
+                "translation": ["M" * 66],
+            },
+        ),
+        _feature(
+            "CDS",
+            300,
+            500,
+            {
+                "locus_tag": ["CDS_B"],
+                "gene_kind": ["biosynthetic"],
+                "translation": ["M" * 66],
+            },
+        ),
+        _feature(
+            "aSDomain",
+            60,
+            200,
+            {
+                "domain_id": ["nrpspksdomains_CDS_A_A.1"],
+                "aSDomain": ["AMP-binding"],
+                "aSTool": ["nrps_pks_domains"],
+                "locus_tag": ["CDS_A"],
+                "specificity": ["substrate consensus: Orn"],
+            },
+        ),
+        _feature(
+            "aSDomain",
+            320,
+            450,
+            {
+                "domain_id": ["nrpspksdomains_CDS_B_PCP.1"],
+                "aSDomain": ["PCP"],
+                "aSTool": ["nrps_pks_domains"],
+                "locus_tag": ["CDS_B"],
+            },
+        ),
+        _feature(
+            "aSModule",
+            60,
+            450,
+            {
+                "domains": [
+                    "nrpspksdomains_CDS_A_A.1",
+                    "nrpspksdomains_CDS_B_PCP.1",
+                ],
+                "locus_tags": ["CDS_A", "CDS_B"],
+                "type": ["nrps"],
+                "complete": [""],
+                "monomer_pairings": ["Orn -> D-Orn", "Orn -> D-Orn"],
+            },
+        ),
+    ]
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=BiopythonWarning,
+        )
+        SeqIO.write(record, path, "genbank")
+    return path

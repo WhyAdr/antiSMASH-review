@@ -23,20 +23,23 @@ The assessment is strong and its main scientific finding is correct. The patch s
 | Extend current domain-Jaccard clustering into a lightweight “GCF” call | **REJECT the GCF label** | Current clustering is strain-level aggregate domain presence. GCFs are BGC-level homology/similarity claims. A dependency-free domain/order profile cluster can be useful, but must be named accordingly; true GCF work needs sequence-level evidence or an external method such as BiG-SCAPE. |
 | Parallel cohort loading / HTML exporter | **Low priority** | Useful only after correctness and regression coverage. Neither belongs in the hotfix branch. |
 
-### Patch ordering
+### Patch ordering & execution status (v0.2.0)
 
 ```text
-P0  Reproduce and lock the baseline
-P1  Correct free-monomer chemistry and peptide-mass calculation
-P2  Add external-truth chemistry regression tests
-P3  Add dedicated default-Markdown/ClusterBlast tests
-P4  Add optional real-output integration regression harness
-P5  Clarify and centralize cross-origin vs circular-topology semantics
-P6  Documentation/versioning/release-note cleanup
+COMPLETED IN v0.2.0:
+P0  Reproduce and lock the baseline (129 -> 141 tests passing)
+P1  Correct free-monomer chemistry, centralize water mass, and guard 1-residue cyclic mass
+P2  Add external-truth chemistry regression tests (1e-6 tolerance, anti-regression tests)
+--  Embed provenance in record JSON envelope (schema 0.3.0)
+--  Codify and test not_applicable architecture policy for unmodeled product classes
+P6  Documentation, semantic contract, v0.1.0 mass regeneration notice, version bump to 0.2.0
 
-POST-PATCH (separate branch/release)
-P7  LC-HRMS candidate matching
-P8  BGC-level similarity/GCF strategy
+DELIBERATELY DEFERRED TO SUBSEQUENT PASSES:
+P3  Dedicated default-Markdown/ClusterBlast tests (tests/test_markdown.py)
+P4  Optional real-output integration regression harness (tests/integration/)
+P5  Centralized circular-topology helper (locations.py / compare.py)
+P7  LC-HRMS candidate matching (separate branch)
+P8  BGC-level similarity/GCF strategy (separate branch)
 ```
 
 Do **not** combine P7/P8 with P1-P6.

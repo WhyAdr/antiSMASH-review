@@ -110,8 +110,8 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 - `gene-tsv`: Entity-level export with one row per gene and zero-based coordinates `[start, end)`.
 - `domain-tsv`: Entity-level export with one row per domain and zero-based coordinates.
 - `clusterblast-tsv`: Entity-level export with ClusterBlast / KnownClusterBlast / SubClusterBlast hit rankings and pairings.
-- `assemblyline-tsv`: Local NRPS/PKS module and monomer calls plus separate Phase 2 core-mass candidate columns; unresolved chemistry remains null.
-- `assemblyline-json`: Versioned derived assembly-line evidence and conservative core-mass candidates (`schema_version: 0.2.0`).
+- `assemblyline-tsv`: Local NRPS/PKS module and monomer calls plus separate Phase 2 core-mass candidate columns; unresolved chemistry remains null (mass candidates generated with v0.1.0 must be regenerated with v0.2.0+).
+- `assemblyline-json`: Versioned derived assembly-line evidence and conservative core-mass candidates (`schema_version: 0.2.0`, `parser_version: 0.2.0`).
 - `assemblyline-markdown`: Human-readable rendering of the same evidence and caveats.
 - `architecture-json`: Scoped domain-slot assessments (`schema_version: 0.1.0`); product classes beyond T1PKS, transAT-PKS, and NRPS are intentionally `not_applicable`; domain evidence is exported for downstream interpretation.
 - `gff3`: Genome-browser GFF3 track with one-based inclusive coordinates and localized findings.

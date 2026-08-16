@@ -454,7 +454,7 @@ def _estimate_core_mass(
     if complete:
         water_mass = WATER_MASS
         linear = sum(masses) - (total - 1) * water_mass
-        cyclic = linear - water_mass
+        cyclic = (linear - water_mass) if total >= 2 else None
 
     if complete:
         scope = (

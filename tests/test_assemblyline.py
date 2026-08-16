@@ -302,6 +302,22 @@ def test_fully_resolved_peptide_has_separate_linear_and_cyclic_candidates() -> N
     assert mass.topology_assumption == "unknown"
 
 
+def test_single_residue_chain_has_linear_mass_but_null_cyclic_candidate() -> None:
+    record = _record(
+        [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser"])],
+        [_domain("D1", "AMP-binding", "CDS1", protein_start=10, protein_end=20)],
+    )
+
+    mass = predict_assembly_lines(record)[0].mass
+    assert mass is not None
+    # Free Ser: C3H7NO3 = 105.04259308875 Da
+    ser = 3 * 12.0 + 7 * 1.00782503223 + 14.00307400443 + 3 * 15.99491461957
+    assert mass.linear_core_mass_da == pytest.approx(ser, abs=1e-9)
+    assert mass.head_to_tail_cyclic_candidate_mass_da is None
+    assert mass.resolved_monomers == 1
+    assert mass.total_monomers == 1
+
+
 def test_starter_module_blocks_mass_when_tail_chemistry_is_unresolved() -> None:
     record = _record(
         [_module(100, 200, ["CDS1"], ["D1"], pairings=["Ser -> Ser"], starter=True)],

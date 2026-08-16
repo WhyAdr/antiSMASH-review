@@ -48,7 +48,8 @@ def test_structured_comment_provenance_preserves_known_and_unknown_fields(tmp_pa
     assert provenance.raw_fields["Mystery"] == ("one", "two")
     assert '"antismash_provenance"' not in dumps_provenance([record])
     assert '"Mystery": [' in dumps_provenance([record])
-    assert '"antismash_provenance"' not in __import__("antismash_review").dumps_records([record])
+    # Schema 0.3.0: antismash_provenance is now deliberately included in record JSON.
+    assert '"antismash_provenance"' in __import__("antismash_review").dumps_records([record])
 
 
 def test_raw_comment_fallback_and_missing_values_remain_explicit(tmp_path: Path) -> None:

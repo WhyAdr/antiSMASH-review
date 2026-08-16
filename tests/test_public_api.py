@@ -99,3 +99,21 @@ def test_top_level_parse_review_export_workflow(tmp_path: Path) -> None:
 def test_pep561_marker_is_available_as_package_data() -> None:
     marker = resources.files("antismash_review").joinpath("py.typed")
     assert marker.is_file()
+
+
+def test_record_json_schema_version_and_provenance(tmp_path: Path) -> None:
+    import json
+
+    from tests.fixtures.build_fixture import write_synthetic_genbank
+
+    gbk = write_synthetic_genbank(tmp_path / "synth.gbk")
+    records = parse_genbank(gbk)
+    parsed = json.loads(dumps_records(records))
+    assert parsed["schema_version"] == "0.3.0"
+    for record_dict in parsed["records"]:
+        assert "antismash_provenance" in record_dict
+        prov = record_dict["antismash_provenance"]
+        assert "version" in prov
+        assert "raw_fields" in prov
+        # The synthetic fixture has Version 8.0.4 in the structured comment
+        assert prov["version"] == "8.0.4"

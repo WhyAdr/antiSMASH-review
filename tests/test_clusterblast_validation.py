@@ -253,7 +253,7 @@ def test_json_clusterblast_structure_errors(tmp_path: Path) -> None:
     with pytest.raises(ClusterBlastParseError, match="Invalid antiSMASH JSON root"):
         parse_clusterblast_json(_write_document(tmp_path, {"no_records": 1}))
 
-    # Module schema version != 2
+    # Module schema version != 1 or 2
     doc = _minimal_document()
     _module(doc)["schema_version"] = 3
     with pytest.raises(ClusterBlastParseError, match="Unsupported ClusterBlast module schema"):
@@ -265,7 +265,7 @@ def test_json_clusterblast_structure_errors(tmp_path: Path) -> None:
     with pytest.raises(ClusterBlastParseError, match="does not match"):
         parse_clusterblast_json(_write_document(tmp_path, doc))
 
-    # Result schema version != 5
+    # Result schema version not in {1, 3, 5}
     doc = _minimal_document()
     _module(doc)["general"]["schema_version"] = 6
     with pytest.raises(ClusterBlastParseError, match="Unsupported ClusterBlast general result"):
@@ -276,6 +276,54 @@ def test_json_clusterblast_structure_errors(tmp_path: Path) -> None:
     _result(doc)["region_number"] = 0
     with pytest.raises(ClusterBlastParseError, match="must be positive"):
         parse_clusterblast_json(_write_document(tmp_path, doc))
+
+
+def test_json_module_schema_1_is_accepted(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["schema_version"] = 1
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert len(results) == 1
+    assert results[0].module_schema_version == 1
+
+
+def test_json_result_schema_1_accepted_similarity_is_none(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["schema_version"] = 1
+    _module(doc)["general"]["schema_version"] = 1
+    del _hit_details(doc)["similarity"]
+
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert len(results) == 1
+    assert results[0].result_schema_version == 1
+    assert results[0].rankings[0].similarity is None
+
+
+def test_json_result_schema_3_accepted_similarity_preserved(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["schema_version"] = 3
+    _hit_details(doc)["similarity"] = 42
+
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert len(results) == 1
+    assert results[0].result_schema_version == 3
+    assert results[0].rankings[0].similarity == 42
+
+
+@pytest.mark.parametrize("schema_val", [0, 2, 4, 6])
+def test_json_rejects_unsupported_result_schemas(tmp_path: Path, schema_val: int) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["schema_version"] = schema_val
+    with pytest.raises(ClusterBlastParseError, match="Unsupported ClusterBlast general result"):
+        parse_clusterblast_json(_write_document(tmp_path, doc))
+
+
+def test_json_plain_query_gene_without_pipes(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _hit_details(doc)["pairings"][0][0] = "GENE_PLAIN_123"
+
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert len(results) == 1
+    assert results[0].rankings[0].pairings[0].query_gene == "GENE_PLAIN_123"
 
 
 def test_merge_and_attach_errors(tmp_path: Path) -> None:

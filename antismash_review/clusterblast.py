@@ -99,7 +99,7 @@ def parse_clusterblast_text(
     *,
     search_type: ClusterBlastSearchType,
 ) -> ClusterBlastResult:
-    """Parse one antiSMASH 8 ClusterBlast text result."""
+    """Parse one antiSMASH ClusterBlast text result."""
     path = Path(path)
     match_region = _REGION_NUM_RE.search(path.name)
     if not match_region:
@@ -327,10 +327,10 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
         module_schema_version = _required_integer(
             cb_mod.get("schema_version"), "module schema_version", path
         )
-        if module_schema_version != 2:
+        if module_schema_version not in {1, 2}:
             raise ClusterBlastParseError(
                 f"Unsupported ClusterBlast module schema version {module_schema_version!r} "
-                f"(expected 2) in {path}"
+                f"(expected 1 or 2) in {path}"
             )
 
         cb_record_id = _required_nonempty_string(cb_mod.get("record_id"), "module record_id", path)
@@ -352,10 +352,10 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
             result_schema_version = _required_integer(
                 section.get("schema_version"), f"{sec_key} result schema_version", path
             )
-            if result_schema_version != 5:
+            if result_schema_version not in {1, 3, 5}:
                 raise ClusterBlastParseError(
                     f"Unsupported ClusterBlast {sec_key} result schema version "
-                    f"{result_schema_version!r} (expected 5) in {path}"
+                    f"{result_schema_version!r} (expected 1, 3, or 5) in {path}"
                 )
 
             raw_results = section.get("results")
@@ -416,11 +416,14 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                                 f"Invalid query string type in {path}: {query_str!r}"
                             )
                         parts = query_str.split("|", 5)
-                        if len(parts) < 5 or not parts[4]:
+                        if len(parts) >= 5 and parts[4].strip():
+                            query_gene = parts[4].strip()
+                        elif "|" not in query_str and query_str.strip():
+                            query_gene = query_str.strip()
+                        else:
                             raise ClusterBlastParseError(
                                 f"Malformed query string in {path}: {query_str!r}"
                             )
-                        query_gene = parts[4]
                         if not isinstance(pairing_dict, dict):
                             raise ClusterBlastParseError(
                                 f"Invalid pairing dictionary in {path}: {pairing_dict!r}"

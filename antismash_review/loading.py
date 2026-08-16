@@ -109,9 +109,12 @@ def load_review_input(
             _sidecar_diagnostic(exc, path)
 
     if text_results or json_results:
+        diag_sink = records[0].diagnostics if (lenient and records) else None
         try:
-            merged = merge_clusterblast_results(text_results, json_results)
-            attach_clusterblast_results(records, merged)
+            merged = merge_clusterblast_results(
+                text_results, json_results, lenient=lenient, diagnostics=diag_sink
+            )
+            attach_clusterblast_results(records, merged, lenient=lenient)
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise

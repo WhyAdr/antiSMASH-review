@@ -13,7 +13,9 @@ from antismash_review.models import (
     ClusterBlastPairing,
     ClusterBlastResult,
     ClusterBlastSearchType,
+    Diagnostic,
     Record,
+    Severity,
 )
 
 _REGION_NUM_RE = re.compile(r"_c(?P<region>\d+)\.txt$", re.IGNORECASE)
@@ -535,28 +537,67 @@ def _result_key(
 def merge_clusterblast_results(
     text_results: Sequence[ClusterBlastResult],
     json_results: Sequence[ClusterBlastResult],
+    *,
+    lenient: bool = False,
+    diagnostics: list[Diagnostic] | None = None,
 ) -> list[ClusterBlastResult]:
     selected: dict[
         tuple[str, int, ClusterBlastSearchType],
         ClusterBlastResult,
     ] = {}
+    json_seen: set[tuple[str, int, ClusterBlastSearchType]] = set()
+    text_seen: set[tuple[str, int, ClusterBlastSearchType]] = set()
+
     for result in json_results:
         key = _result_key(result)
-        if key in selected:
-            raise ClusterBlastParseError(f"duplicate JSON ClusterBlast result: {key}")
+        if key in json_seen:
+            msg = f"duplicate JSON ClusterBlast result: {key}"
+            if not lenient:
+                raise ClusterBlastParseError(msg)
+            if diagnostics is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="clusterblast_duplicate_result",
+                        severity=Severity.WARNING,
+                        message=msg,
+                        source=str(result.source_path),
+                        record_id=result.record_id,
+                    )
+                )
+            continue
+        json_seen.add(key)
         selected[key] = result
+
     for result in text_results:
         key = _result_key(result)
-        if key in selected and selected[key].source_format == "text":
-            raise ClusterBlastParseError(f"duplicate text ClusterBlast result: {key}")
+        if key in text_seen:
+            msg = f"duplicate text ClusterBlast result: {key}"
+            if not lenient:
+                raise ClusterBlastParseError(msg)
+            if diagnostics is not None:
+                diagnostics.append(
+                    Diagnostic(
+                        code="clusterblast_duplicate_result",
+                        severity=Severity.WARNING,
+                        message=msg,
+                        source=str(result.source_path),
+                        record_id=result.record_id,
+                    )
+                )
+            continue
+        text_seen.add(key)
         selected[key] = result
+
     return [selected[key] for key in sorted(selected)]
 
 
 def attach_clusterblast_results(
     records: list[Record],
     results: list[ClusterBlastResult],
+    *,
+    lenient: bool = False,
 ) -> None:
+    valid_attachments: list[tuple[Record, ClusterBlastResult]] = []
     for result in results:
         candidates = [
             record
@@ -565,7 +606,21 @@ def attach_clusterblast_results(
             and any(region.number == result.region_number for region in record.regions)
         ]
         if len(candidates) != 1:
-            raise ClusterBlastParseError(
-                f"expected one GenBank target for {_result_key(result)}, found {len(candidates)}"
-            )
-        candidates[0].clusterblast_results.append(result)
+            msg = f"expected one GenBank target for {_result_key(result)}, found {len(candidates)}"
+            if not lenient:
+                raise ClusterBlastParseError(msg)
+            if records:
+                records[0].diagnostics.append(
+                    Diagnostic(
+                        code="clusterblast_attach_failed",
+                        severity=Severity.WARNING,
+                        message=msg,
+                        source=str(result.source_path),
+                        record_id=records[0].record_id,
+                    )
+                )
+        else:
+            valid_attachments.append((candidates[0], result))
+
+    for target_record, result in valid_attachments:
+        target_record.clusterblast_results.append(result)

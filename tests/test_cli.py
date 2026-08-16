@@ -5,8 +5,15 @@ from pathlib import Path
 import pytest
 
 from antismash_review.cli import load_review_records, main
-from antismash_review.clusterblast import ClusterBlastParseError
+from antismash_review.clusterblast import (
+    ClusterBlastParseError,
+    attach_clusterblast_results,
+    merge_clusterblast_results,
+    parse_clusterblast_text,
+)
 from antismash_review.discovery import discover
+from antismash_review.genbank import parse_genbank
+from antismash_review.models import Diagnostic
 from tests.fixtures.build_fixture import write_synthetic_genbank
 
 
@@ -277,3 +284,94 @@ def test_lenient_loading_retains_valid_sidecars_alongside_corrupt_ones(
 
     codes = {d.code for d in records[0].diagnostics}
     assert "clusterblast_parse_failed" in codes
+
+
+def test_lenient_loading_retains_valid_sidecars_when_one_target_is_unattachable(
+    tmp_path: Path,
+) -> None:
+    write_synthetic_genbank(tmp_path / "synthetic.gbk")
+    cb_dir = tmp_path / "clusterblast"
+    cb_dir.mkdir()
+    # valid target for SYNTH.1 region 1
+    valid_cb = cb_dir / "contig_1_c1.txt"
+    valid_cb.write_text(
+        "ClusterBlast scores for SYNTH.1\n"
+        "Significant hits:\n"
+        "1. SYNTH-HIT-1\tSynthetic hit\n"
+        "Details:\n"
+        "1. SYNTH-HIT-1\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 12.5\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSYNTH_SUBJECT\t90.0\t12.5\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+    # unattachable target for SYNTH.1 region 99 (no region 99 exists)
+    unattachable_cb = cb_dir / "contig_1_c99.txt"
+    unattachable_cb.write_text(
+        "ClusterBlast scores for SYNTH.1\n"
+        "Significant hits:\n"
+        "1. SYNTH-HIT-99\tSynthetic hit 99\n"
+        "Details:\n"
+        "1. SYNTH-HIT-99\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 12.5\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSYNTH_SUBJECT\t90.0\t12.5\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+
+    manifest = discover(tmp_path)
+
+    # strict mode must fail before mutating records
+    with pytest.raises(ClusterBlastParseError, match="expected one GenBank target"):
+        load_review_records(manifest, lenient=False)
+
+    # lenient mode attaches the valid result and emits clusterblast_attach_failed for the other
+    records, _ = load_review_records(manifest, lenient=True)
+    assert len(records) == 1
+    assert len(records[0].clusterblast_results) == 1
+    assert records[0].clusterblast_results[0].region_number == 1
+    assert records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"
+
+    codes = {d.code for d in records[0].diagnostics}
+    assert "clusterblast_attach_failed" in codes
+
+
+def test_lenient_loading_retains_valid_sidecars_when_duplicate_results_occur(
+    tmp_path: Path,
+) -> None:
+    # Direct testing of merge_clusterblast_results and attach_clusterblast_results in lenient mode
+    records = parse_genbank(write_synthetic_genbank(tmp_path / "synthetic.gbk"))
+    cb_file = tmp_path / "contig_1_c1.txt"
+    cb_file.write_text(
+        "ClusterBlast scores for SYNTH.1\n"
+        "Significant hits:\n"
+        "1. SYNTH-HIT-1\tSynthetic hit\n"
+        "Details:\n"
+        "1. SYNTH-HIT-1\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 12.5\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSYNTH_SUBJECT\t90.0\t12.5\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+    res1 = parse_clusterblast_text(cb_file, search_type="clusterblast")
+    res2 = parse_clusterblast_text(cb_file, search_type="clusterblast")
+
+    # Duplicate text results
+    diagnostics: list[Diagnostic] = []
+    merged = merge_clusterblast_results([res1, res2], [], lenient=True, diagnostics=diagnostics)
+    assert len(merged) == 1
+    assert len(diagnostics) == 1
+    assert diagnostics[0].code == "clusterblast_duplicate_result"
+
+    attach_clusterblast_results(records, merged, lenient=True)
+    assert len(records[0].clusterblast_results) == 1
+    assert records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"

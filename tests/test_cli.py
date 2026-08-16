@@ -233,3 +233,47 @@ def test_load_review_records_lenient_sidecar_diagnostic(tmp_path: Path) -> None:
     assert len(records) == 1
     codes = {d.code for d in records[0].diagnostics}
     assert "clusterblast_parse_failed" in codes
+
+
+def test_lenient_loading_retains_valid_sidecars_alongside_corrupt_ones(
+    tmp_path: Path,
+) -> None:
+    write_synthetic_genbank(tmp_path / "synthetic.gbk")
+    cb_dir = tmp_path / "clusterblast"
+    cb_dir.mkdir()
+    valid_cb = cb_dir / "contig_1_c1.txt"
+    valid_cb.write_text(
+        "ClusterBlast scores for SYNTH.1\n"
+        "Significant hits:\n"
+        "1. SYNTH-HIT-1\tSynthetic hit\n"
+        "Details:\n"
+        "1. SYNTH-HIT-1\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 12.5\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSYNTH_SUBJECT\t90.0\t12.5\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+
+    kcb_dir = tmp_path / "knownclusterblast"
+    kcb_dir.mkdir()
+    bad_kcb = kcb_dir / "contig_1_c1.txt"
+    bad_kcb.write_text("corrupt knownclusterblast content\n", encoding="utf-8")
+
+    manifest = discover(tmp_path)
+
+    # strict mode must raise
+    with pytest.raises(ClusterBlastParseError):
+        load_review_records(manifest, lenient=False)
+
+    # lenient mode must retain the valid clusterblast result and emit diagnostic for the corrupt one
+    records, _ = load_review_records(manifest, lenient=True)
+    assert len(records) == 1
+    assert len(records[0].clusterblast_results) == 1
+    assert records[0].clusterblast_results[0].search_type == "clusterblast"
+    assert records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"
+
+    codes = {d.code for d in records[0].diagnostics}
+    assert "clusterblast_parse_failed" in codes

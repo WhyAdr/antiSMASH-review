@@ -62,7 +62,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - `loading.py` owns the shared GenBank plus ClusterBlast enrichment path used by inspection and comparison; the compatibility loader in `cli.py` is only a wrapper.
 - Native antiSMASH JSON alone remains unsupported as primary input; when a GenBank input is provided alongside JSON or sidecar text directories, sidecar enrichment parses and attaches ClusterBlast results.
 - Markdown and the top-level JSON diagnostics include evidence-scoped review diagnostics.
-- The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.3.0"`, and `parser_version`, and embeds `antismash_provenance` on each record.
+- The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.4.0"`, and `parser_version`, and embeds `antismash_provenance` on each record. Record schema `0.4.0` adds `data_version` to `ClusterBlastResult` and separates input-level diagnostics from record-scoped diagnostics.
 - TSV (`--format tsv`) is a compact one-row-per-record summary.
 - Entity-level TSV exports (`--format gene-tsv`, `--format domain-tsv`, and `--format clusterblast-tsv`) export one row per entity. All entity TSV coordinates (`start`, `end`) are the model's zero-based, half-open coordinates `[start, end)` (never silently converted to GenBank one-based display coordinates).
 
@@ -109,11 +109,11 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 
 - Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
 - The current contract reads recognized `.txt` sidecars directly inside those canonical directories; nested HTML/detail assets are ignored.
-- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 6.x), `3` (antiSMASH 7.x), and `5` (antiSMASH 8.x).
+- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 5.x/6.x), `2` (antiSMASH 7.0.x), `3` (antiSMASH 7.1.x), and `5` (antiSMASH 8.x). ClusterBlast `data_version` is preserved when present.
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
 - Merging and attaching sidecar results is transactional: in strict mode, any duplicate result key or unattachable target fails fast before modifying records; in lenient mode, duplicate results emit `clusterblast_duplicate_result`, unattachable targets emit `clusterblast_attach_failed`, and all valid, attachable results are preserved and attached.
 - Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.
-- In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors are isolated per sidecar file: a failed sidecar emits a `clusterblast_parse_failed` diagnostic, while all successfully parsed sidecars are preserved, merged, and attached.
+- In strict mode, malformed or unattached sidecars raise `ClusterBlastParseError`. In lenient mode, errors are isolated per sidecar file: a failed sidecar emits a `clusterblast_parse_failed` diagnostic in `LoadedReviewInput.input_diagnostics`, while all successfully parsed sidecars are preserved, merged, and attached. Diagnostics are routed to the owning record when uniquely identifiable; otherwise they remain input-level. Diagnostics never fall back to an arbitrary first record.
 - Retain `misc_feature` entries only as raw GenBank evidence; do not infer that they are ClusterBlast results.
 
 ## Comparative review
@@ -131,7 +131,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 
 ## Provenance
 
-- Parsed records retain all antiSMASH structured-comment keys and repeated values in a typed internal provenance object. Biopython's structured-comment mapping is supplemented with the raw GenBank comment block when repeated keys would otherwise be lost. The record JSON envelope embeds `antismash_provenance` on each record (schema version `0.3.0`).
+- Parsed records retain all antiSMASH structured-comment keys and repeated values in a typed internal provenance object. Biopython's structured-comment mapping is supplemented with the raw GenBank comment block when repeated keys would otherwise be lost. The record JSON envelope embeds `antismash_provenance` on each record (schema version `0.4.0`).
 - The dedicated provenance manifest reports source paths, SHA-256 hashes, record IDs, review-tool version, normalized antiSMASH version/run date fields when present, database-like fields, and raw unknown keys.
 - Missing metadata remain unknown. A comparison provenance delta uses `True`/`False` only when both values are present; otherwise it uses `None` and never calls two absent fields unchanged.
 - Comparison schema version is `0.2.0` because matched record comparisons now carry an explicit provenance delta.

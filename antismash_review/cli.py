@@ -252,7 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if args.format == "json":
-        output = dumps_records(loaded.records)
+        output = dumps_records(loaded.records, input_diagnostics=loaded.input_diagnostics)
     elif args.format == "tsv":
         output = render_tsv(loaded.records)
     elif args.format == "gene-tsv":
@@ -278,7 +278,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.format == "provenance-tsv":
         output = render_provenance_tsv(loaded.records)
     else:
-        output = render_records(loaded.records)
+        output = render_records(loaded.records, input_diagnostics=loaded.input_diagnostics)
 
     if args.output:
         output_path = args.output.resolve()

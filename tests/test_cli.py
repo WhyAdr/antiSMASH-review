@@ -13,6 +13,7 @@ from antismash_review.clusterblast import (
 )
 from antismash_review.discovery import discover
 from antismash_review.genbank import parse_genbank
+from antismash_review.loading import load_review_input
 from antismash_review.models import Diagnostic
 from tests.fixtures.build_fixture import write_synthetic_genbank
 
@@ -233,13 +234,13 @@ def test_load_review_records_lenient_sidecar_diagnostic(tmp_path: Path) -> None:
     manifest = discover(tmp_path)
     # strict should raise
     with pytest.raises(ClusterBlastParseError):
-        load_review_records(manifest, lenient=False)
+        load_review_input(manifest, lenient=False)
 
-    # lenient should add diagnostic
-    records, _ = load_review_records(manifest, lenient=True)
-    assert len(records) == 1
-    codes = {d.code for d in records[0].diagnostics}
-    assert "clusterblast_parse_failed" in codes
+    # lenient should add diagnostic to input_diagnostics
+    loaded = load_review_input(manifest, lenient=True)
+    assert len(loaded.records) == 1
+    assert any(d.code == "clusterblast_parse_failed" for d in loaded.input_diagnostics)
+    assert not any(d.code == "clusterblast_parse_failed" for d in loaded.records[0].diagnostics)
 
 
 def test_lenient_loading_retains_valid_sidecars_alongside_corrupt_ones(
@@ -273,17 +274,17 @@ def test_lenient_loading_retains_valid_sidecars_alongside_corrupt_ones(
 
     # strict mode must raise
     with pytest.raises(ClusterBlastParseError):
-        load_review_records(manifest, lenient=False)
+        load_review_input(manifest, lenient=False)
 
     # lenient mode must retain the valid clusterblast result and emit diagnostic for the corrupt one
-    records, _ = load_review_records(manifest, lenient=True)
-    assert len(records) == 1
-    assert len(records[0].clusterblast_results) == 1
-    assert records[0].clusterblast_results[0].search_type == "clusterblast"
-    assert records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"
+    loaded = load_review_input(manifest, lenient=True)
+    assert len(loaded.records) == 1
+    assert len(loaded.records[0].clusterblast_results) == 1
+    assert loaded.records[0].clusterblast_results[0].search_type == "clusterblast"
+    assert loaded.records[0].clusterblast_results[0].rankings[0].accession == "SYNTH-HIT-1"
 
-    codes = {d.code for d in records[0].diagnostics}
-    assert "clusterblast_parse_failed" in codes
+    assert any(d.code == "clusterblast_parse_failed" for d in loaded.input_diagnostics)
+    assert not any(d.code == "clusterblast_parse_failed" for d in loaded.records[0].diagnostics)
 
 
 def test_lenient_loading_retains_valid_sidecars_when_one_target_is_unattachable(
@@ -410,3 +411,43 @@ def test_lenient_loading_diagnostic_provenance_multi_record(tmp_path: Path) -> N
     attach_diags = [d for d in rec2.diagnostics if d.code == "clusterblast_attach_failed"]
     assert len(attach_diags) == 1
     assert attach_diags[0].record_id == "RECORD_B"
+
+
+def test_lenient_loading_diagnostic_isolation_multi_record(tmp_path: Path) -> None:
+    write_synthetic_genbank(tmp_path / "rec1.gbk")
+    # second record in separate file
+    write_synthetic_genbank(tmp_path / "rec2.gbk")
+    # Update rec2 gbk file to have RECORD_B as locus/accession
+    rec2_content = (tmp_path / "rec2.gbk").read_text(encoding="utf-8")
+    rec2_content = rec2_content.replace("SYNTH.1", "RECORD_B")
+    (tmp_path / "rec2.gbk").write_text(rec2_content, encoding="utf-8")
+
+    # unattachable sidecar for RECORD_B region 99
+    cb_dir = tmp_path / "clusterblast"
+    cb_dir.mkdir()
+    cb_file = cb_dir / "contig_1_c99.txt"
+    cb_file.write_text(
+        "ClusterBlast scores for RECORD_B\n"
+        "Significant hits:\n"
+        "1. HIT-B\tHit description\n"
+        "Details:\n"
+        "1. HIT-B\n"
+        "Type: NRPS\n"
+        "Number of proteins with BLAST hits to this cluster: 1\n"
+        "Cumulative BLAST score: 10.0\n"
+        "Table of Blast hits\n"
+        "SYN_CDS_1\tSUBJ_1\t90.0\t10.0\t80.0\t1e-10\n"
+        ">>\n",
+        encoding="utf-8",
+    )
+
+    manifest = discover(tmp_path)
+    loaded = load_review_input(manifest, lenient=True)
+
+    rec_a = next(r for r in loaded.records if r.record_id == "SYNTH.1")
+    rec_b = next(r for r in loaded.records if r.record_id == "RECORD_B")
+
+    # rec_a must NOT have any attach failed diagnostics
+    assert not any(d.code == "clusterblast_attach_failed" for d in rec_a.diagnostics)
+    # rec_b must have the attach failed diagnostic
+    assert any(d.code == "clusterblast_attach_failed" for d in rec_b.diagnostics)

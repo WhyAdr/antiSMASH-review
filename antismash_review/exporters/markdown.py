@@ -1,4 +1,8 @@
-from antismash_review.models import Record
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from antismash_review.models import Diagnostic, Record
 from antismash_review.review import review_record
 
 SEARCH_TYPE_TITLES = {
@@ -19,8 +23,17 @@ def _escape_cell(value: object | None) -> str:
     return text.replace("|", r"\|").strip()
 
 
-def render_records(records: list[Record]) -> str:
+def render_records(
+    records: list[Record],
+    *,
+    input_diagnostics: Sequence[Diagnostic] = (),
+) -> str:
     lines: list[str] = ["# antiSMASH review", ""]
+    if input_diagnostics:
+        lines.extend(["## Input diagnostics", ""])
+        for diag in input_diagnostics:
+            lines.append(f"- `{diag.severity.value}` `{diag.code}`: {diag.message}")
+        lines.append("")
     for record in records:
         lines.extend(
             [

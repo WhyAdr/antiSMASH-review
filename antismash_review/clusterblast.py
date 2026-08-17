@@ -23,6 +23,14 @@ _HEADER_RE = re.compile(r"^ClusterBlast scores for\s+(?P<record_id>\S+)", re.IGN
 _SIG_HIT_RE = re.compile(r"^(?P<rank>\d+)\.\s+(?P<accession>\S+)(?:\t(?P<description>.*))?$")
 _DETAILS_HEADER_RE = re.compile(r"^(?P<rank>\d+)\.\s+(?P<accession>\S+)$")
 
+# Upstream serializer version → antiSMASH generation (documentation/validation).
+_CLUSTERBLAST_RESULT_SCHEMA_GENERATIONS: dict[int, str] = {
+    1: "antiSMASH 5.x/6.x",
+    2: "antiSMASH 7.0.x",
+    3: "antiSMASH 7.1.x",
+    5: "antiSMASH 8.x",
+}
+
 
 class ClusterBlastParseError(RuntimeError):
     """A ClusterBlast sidecar was recognized but could not be parsed safely."""
@@ -354,11 +362,38 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
             result_schema_version = _required_integer(
                 section.get("schema_version"), f"{sec_key} result schema_version", path
             )
-            if result_schema_version not in {1, 3, 5}:
+            if result_schema_version not in _CLUSTERBLAST_RESULT_SCHEMA_GENERATIONS:
                 raise ClusterBlastParseError(
                     f"Unsupported ClusterBlast {sec_key} result schema version "
-                    f"{result_schema_version!r} (expected 1, 3, or 5) in {path}"
+                    f"{result_schema_version!r} "
+                    f"(expected {sorted(_CLUSTERBLAST_RESULT_SCHEMA_GENERATIONS)}) in {path}"
                 )
+
+            data_version = _optional_string(
+                section.get("data_version"), f"{sec_key} data_version", path
+            )
+
+            # Validate optional section-level record_id when present.
+            if "record_id" in section and section["record_id"] is not None:
+                sec_rec_id = _required_nonempty_string(
+                    section["record_id"], f"{sec_key} record_id", path
+                )
+                if sec_rec_id != cb_record_id:
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast {sec_key} record_id {sec_rec_id!r} does not match "
+                        f"module record_id {cb_record_id!r} in {path}"
+                    )
+
+            # Validate optional section-level search_type when present.
+            if "search_type" in section and section["search_type"] is not None:
+                sec_search_type = _required_nonempty_string(
+                    section["search_type"], f"{sec_key} search_type", path
+                )
+                if sec_search_type != sec_key:
+                    raise ClusterBlastParseError(
+                        f"ClusterBlast {sec_key} search_type {sec_search_type!r} does not "
+                        f"match section key {sec_key!r} in {path}"
+                    )
 
             raw_results = section.get("results")
             if not isinstance(raw_results, list):
@@ -509,6 +544,7 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                         source_format="json",
                         module_schema_version=module_schema_version,
                         result_schema_version=result_schema_version,
+                        data_version=data_version,
                     )
                 )
 
@@ -596,6 +632,7 @@ def attach_clusterblast_results(
     results: list[ClusterBlastResult],
     *,
     lenient: bool = False,
+    diagnostics: list[Diagnostic] | None = None,
 ) -> None:
     valid_attachments: list[tuple[Record, ClusterBlastResult]] = []
     for result in results:
@@ -609,20 +646,19 @@ def attach_clusterblast_results(
             msg = f"expected one GenBank target for {_result_key(result)}, found {len(candidates)}"
             if not lenient:
                 raise ClusterBlastParseError(msg)
-            if records:
-                target_record = next(
-                    (r for r in records if result.record_id in {r.record_id, r.name}),
-                    records[0],
-                )
-                target_record.diagnostics.append(
-                    Diagnostic(
-                        code="clusterblast_attach_failed",
-                        severity=Severity.WARNING,
-                        message=msg,
-                        source=str(result.source_path),
-                        record_id=result.record_id,
-                    )
-                )
+            diag = Diagnostic(
+                code="clusterblast_attach_failed",
+                severity=Severity.WARNING,
+                message=msg,
+                source=str(result.source_path),
+                record_id=result.record_id,
+            )
+            # Route to the owning record if uniquely identifiable.
+            id_matches = [r for r in records if result.record_id in {r.record_id, r.name}]
+            if len(id_matches) == 1:
+                id_matches[0].diagnostics.append(diag)
+            elif diagnostics is not None:
+                diagnostics.append(diag)
         else:
             valid_attachments.append((candidates[0], result))
 

@@ -109,7 +109,7 @@ def test_record_json_schema_version_and_provenance(tmp_path: Path) -> None:
     gbk = write_synthetic_genbank(tmp_path / "synth.gbk")
     records = parse_genbank(gbk)
     parsed = json.loads(dumps_records(records))
-    assert parsed["schema_version"] == "0.3.0"
+    assert parsed["schema_version"] == "0.4.0"
     for record_dict in parsed["records"]:
         assert "antismash_provenance" in record_dict
         prov = record_dict["antismash_provenance"]

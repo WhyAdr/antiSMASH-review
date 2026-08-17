@@ -1,0 +1,55 @@
+{
+  "records": [
+    {
+      "id": "SYNTH.1",
+      "modules": {
+        "antismash.modules.clusterblast": {
+          "schema_version": 2,
+          "record_id": "SYNTH.1",
+          "general": {
+            "schema_version": 2,
+            "data_version": "1.0",
+            "record_id": "SYNTH.1",
+            "search_type": "general",
+            "results": [
+              {
+                "region_number": 1,
+                "total_hits": 1,
+                "ranking": [
+                  [
+                    {
+                      "accession": "BGC0001000",
+                      "description": "Synthetic reference cluster",
+                      "cluster_type": "NRPS"
+                    },
+                    {
+                      "hits": 1,
+                      "core_gene_hits": 1,
+                      "blast_score": 100.0,
+                      "synteny_score": 2,
+                      "core_bonus": 1,
+                      "pairings": [
+                        [
+                          "loc|SYNTH.1|0|100|SYN_CDS_1",
+                          0,
+                          {
+                            "name": "orf1",
+                            "perc_ident": 80.0,
+                            "blastscore": 100.0,
+                            "perc_coverage": 90.0,
+                            "evalue": 1e-10,
+                            "locus_tag": "BGC0001000_1"
+                          }
+                        ]
+                      ]
+                    }
+                  ]
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

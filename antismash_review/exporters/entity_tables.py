@@ -67,6 +67,9 @@ CLUSTERBLAST_COLUMNS = (
     "blast_score",
     "similarity",
     "pairing_count",
+    "module_schema_version",
+    "result_schema_version",
+    "data_version",
 )
 
 
@@ -171,6 +174,9 @@ def render_clusterblast_tsv(records: list[Record]) -> str:
                         "",
                         "",
                         "",
+                        _optional(result.module_schema_version),
+                        _optional(result.result_schema_version),
+                        _optional(result.data_version),
                     )
                 )
             else:
@@ -192,6 +198,9 @@ def render_clusterblast_tsv(records: list[Record]) -> str:
                             _optional(hit.blast_score),
                             _optional(hit.similarity),
                             len(hit.pairings),
+                            _optional(result.module_schema_version),
+                            _optional(result.result_schema_version),
+                            _optional(result.data_version),
                         )
                     )
     return output.getvalue()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .clusterblast import (
@@ -24,6 +24,7 @@ class LoadedReviewInput:
     root: Path
     records: list[Record]
     input_paths: set[Path]
+    input_diagnostics: list[Diagnostic] = field(default_factory=list)
 
 
 def load_review_input(
@@ -63,18 +64,18 @@ def load_review_input(
 
     text_results: list[ClusterBlastResult] = []
     json_results: list[ClusterBlastResult] = []
+    input_diagnostics: list[Diagnostic] = []
 
-    def _sidecar_diagnostic(exc: ClusterBlastParseError, source: Path) -> None:
-        if records:
-            records[0].diagnostics.append(
-                Diagnostic(
-                    code="clusterblast_parse_failed",
-                    severity=Severity.WARNING,
-                    message=str(exc),
-                    source=str(source),
-                    record_id=None,
-                )
+    def _input_diagnostic(exc: ClusterBlastParseError, source: Path) -> None:
+        input_diagnostics.append(
+            Diagnostic(
+                code="clusterblast_parse_failed",
+                severity=Severity.WARNING,
+                message=str(exc),
+                source=str(source),
+                record_id=None,
             )
+        )
 
     for path in manifest.clusterblast_files:
         try:
@@ -82,7 +83,7 @@ def load_review_input(
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise
-            _sidecar_diagnostic(exc, path)
+            _input_diagnostic(exc, path)
 
     for path in manifest.knownclusterblast_files:
         try:
@@ -90,7 +91,7 @@ def load_review_input(
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise
-            _sidecar_diagnostic(exc, path)
+            _input_diagnostic(exc, path)
 
     for path in manifest.subclusterblast_files:
         try:
@@ -98,7 +99,7 @@ def load_review_input(
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise
-            _sidecar_diagnostic(exc, path)
+            _input_diagnostic(exc, path)
 
     for path in manifest.json_files:
         try:
@@ -106,22 +107,33 @@ def load_review_input(
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise
-            _sidecar_diagnostic(exc, path)
+            _input_diagnostic(exc, path)
 
     if text_results or json_results:
-        diag_sink = records[0].diagnostics if (lenient and records) else None
+        merge_diagnostics: list[Diagnostic] = []
+        attach_diagnostics: list[Diagnostic] = []
         try:
             merged = merge_clusterblast_results(
-                text_results, json_results, lenient=lenient, diagnostics=diag_sink
+                text_results, json_results, lenient=lenient, diagnostics=merge_diagnostics
             )
-            attach_clusterblast_results(records, merged, lenient=lenient)
+            for diag in merge_diagnostics:
+                matches = [r for r in records if diag.record_id in {r.record_id, r.name}]
+                if len(matches) == 1:
+                    matches[0].diagnostics.append(diag)
+                else:
+                    input_diagnostics.append(diag)
+            attach_clusterblast_results(
+                records, merged, lenient=lenient, diagnostics=attach_diagnostics
+            )
+            input_diagnostics.extend(attach_diagnostics)
         except ClusterBlastParseError as exc:
             if not lenient:
                 raise
-            _sidecar_diagnostic(exc, manifest.root)
+            _input_diagnostic(exc, manifest.root)
 
     return LoadedReviewInput(
         root=manifest.root,
         records=records,
         input_paths=input_paths,
+        input_diagnostics=input_diagnostics,
     )

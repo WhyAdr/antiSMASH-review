@@ -17,7 +17,7 @@ from antismash_review.exporters.entity_tables import render_clusterblast_tsv
 from antismash_review.genbank import parse_genbank
 from tests.fixtures.build_fixture import write_synthetic_genbank
 
-FIXTURE = Path(__file__).parent / "fixtures" / "clusterblast" / "contig_1_c1.txt"
+FIXTURE = Path(__file__).parent / "fixtures" / "clusterblast" / "text" / "contig_1_c1.txt"
 
 
 def _minimal_document() -> dict[str, Any]:
@@ -298,6 +298,19 @@ def test_json_result_schema_1_accepted_similarity_is_none(tmp_path: Path) -> Non
     assert results[0].rankings[0].similarity is None
 
 
+def test_json_result_schema_2_accepted_data_version_preserved(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["schema_version"] = 2
+    _module(doc)["general"]["data_version"] = "1.0"
+    del _hit_details(doc)["similarity"]
+
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert len(results) == 1
+    assert results[0].result_schema_version == 2
+    assert results[0].data_version == "1.0"
+    assert results[0].rankings[0].similarity is None
+
+
 def test_json_result_schema_3_accepted_similarity_preserved(tmp_path: Path) -> None:
     doc = _minimal_document()
     _module(doc)["general"]["schema_version"] = 3
@@ -309,11 +322,38 @@ def test_json_result_schema_3_accepted_similarity_preserved(tmp_path: Path) -> N
     assert results[0].rankings[0].similarity == 42
 
 
-@pytest.mark.parametrize("schema_val", [0, 2, 4, 6])
+@pytest.mark.parametrize("schema_val", [0, 4, 6])
 def test_json_rejects_unsupported_result_schemas(tmp_path: Path, schema_val: int) -> None:
     doc = _minimal_document()
     _module(doc)["general"]["schema_version"] = schema_val
     with pytest.raises(ClusterBlastParseError, match="Unsupported ClusterBlast general result"):
+        parse_clusterblast_json(_write_document(tmp_path, doc))
+
+
+def test_json_data_version_absent_is_none(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    results = parse_clusterblast_json(_write_document(tmp_path, doc))
+    assert results[0].data_version is None
+
+
+def test_json_data_version_non_string_rejected(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["data_version"] = 42
+    with pytest.raises(ClusterBlastParseError, match="data_version"):
+        parse_clusterblast_json(_write_document(tmp_path, doc))
+
+
+def test_json_section_record_id_mismatch_rejected(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["record_id"] = "WRONG"
+    with pytest.raises(ClusterBlastParseError, match="record_id"):
+        parse_clusterblast_json(_write_document(tmp_path, doc))
+
+
+def test_json_section_search_type_mismatch_rejected(tmp_path: Path) -> None:
+    doc = _minimal_document()
+    _module(doc)["general"]["search_type"] = "knowncluster"
+    with pytest.raises(ClusterBlastParseError, match="search_type"):
         parse_clusterblast_json(_write_document(tmp_path, doc))
 
 
@@ -347,34 +387,47 @@ def test_merge_and_attach_errors(tmp_path: Path) -> None:
 
 def test_clusterblast_json_fixtures_across_versions() -> None:
     fixtures_dir = Path(__file__).parent / "fixtures" / "clusterblast"
-    v6_file = fixtures_dir / "clusterblast_v6_schema1.json"
-    v7_file = fixtures_dir / "clusterblast_v7_schema3.json"
-    v8_file = fixtures_dir / "clusterblast_v8_schema5.json"
-    legacy_file = fixtures_dir / "clusterblast_legacy_module_schema1.json"
+    min_dir = fixtures_dir / "minimal"
+    golden_dir = fixtures_dir / "golden"
+
+    v6_file = min_dir / "schema1_minimal.json"
+    v7_0_file = min_dir / "schema2_minimal.json"
+    v7_1_file = min_dir / "schema3_minimal.json"
+    v8_file = min_dir / "schema5_minimal.json"
+    legacy_file = min_dir / "clusterblast_compat_module_schema1.json"
 
     v6_res = parse_clusterblast_json(v6_file)[0]
-    v7_res = parse_clusterblast_json(v7_file)[0]
+    v7_0_res = parse_clusterblast_json(v7_0_file)[0]
+    v7_1_res = parse_clusterblast_json(v7_1_file)[0]
     v8_res = parse_clusterblast_json(v8_file)[0]
     legacy_res = parse_clusterblast_json(legacy_file)[0]
 
     # Version-specific schemas matching upstream antiSMASH serializers
     assert v6_res.module_schema_version == 2
     assert v6_res.result_schema_version == 1
+    assert v6_res.data_version is None
     assert v6_res.rankings[0].similarity is None
 
-    assert v7_res.module_schema_version == 2
-    assert v7_res.result_schema_version == 3
-    assert v7_res.rankings[0].similarity == 42
+    assert v7_0_res.module_schema_version == 2
+    assert v7_0_res.result_schema_version == 2
+    assert v7_0_res.data_version == "1.0"
+    assert v7_0_res.rankings[0].similarity is None
+
+    assert v7_1_res.module_schema_version == 2
+    assert v7_1_res.result_schema_version == 3
+    assert v7_1_res.data_version == "1.0"
+    assert v7_1_res.rankings[0].similarity == 42
 
     assert v8_res.module_schema_version == 2
     assert v8_res.result_schema_version == 5
+    assert v8_res.data_version == "1.0"
     assert v8_res.rankings[0].similarity == 42
 
     assert legacy_res.module_schema_version == 1
     assert legacy_res.result_schema_version == 1
 
     # Normalized parity across shared fields
-    for res in (v6_res, v7_res, v8_res, legacy_res):
+    for res in (v6_res, v7_0_res, v7_1_res, v8_res, legacy_res):
         assert res.record_id == "SYNTH.1"
         assert res.region_number == 1
         assert res.search_type == "clusterblast"
@@ -397,3 +450,15 @@ def test_clusterblast_json_fixtures_across_versions() -> None:
         assert pairing.percent_coverage == 90.0
         assert pairing.evalue == 1e-10
         assert pairing.subject_protein_id == "BGC0001000_1"
+
+    # Golden fixtures test
+    for golden_name in (
+        "antismash_6_1_1_clusterblast.json",
+        "antismash_7_0_1_clusterblast.json",
+        "antismash_7_1_0_clusterblast.json",
+        "antismash_8_0_4_clusterblast.json",
+    ):
+        golden_res = parse_clusterblast_json(golden_dir / golden_name)
+        assert len(golden_res) == 1
+        assert golden_res[0].record_id == "SYNTH.1"
+        assert len(golden_res[0].rankings) == 1

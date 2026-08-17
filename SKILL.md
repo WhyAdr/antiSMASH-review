@@ -105,7 +105,7 @@ The supported renderers are `dumps_records()`, `render_records()`, `render_tsv()
 ## Choose an export
 
 - `markdown`: Concise human review with ClusterBlast tables and review diagnostics.
-- `json`: Versioned, structured review envelope (`schema_version: 0.3.0`; includes `antismash_provenance`).
+- `json`: Versioned, structured review envelope (`schema_version: 0.4.0`; includes `antismash_provenance` and `data_version` on ClusterBlast results).
 - `tsv`: Compact one-row-per-record summary.
 - `gene-tsv`: Entity-level export with one row per gene and zero-based coordinates `[start, end)`.
 - `domain-tsv`: Entity-level export with one row per domain and zero-based coordinates.

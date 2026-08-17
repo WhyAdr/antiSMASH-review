@@ -7,7 +7,8 @@
           "schema_version": 2,
           "record_id": "SYNTH.1",
           "general": {
-            "schema_version": 3,
+            "schema_version": 2,
+            "data_version": "1.0",
             "results": [
               {
                 "region_number": 1,
@@ -25,7 +26,6 @@
                       "blast_score": 100.0,
                       "synteny_score": 2,
                       "core_bonus": 1,
-                      "similarity": 42,
                       "pairings": [
                         [
                           "loc|SYNTH.1|0|100|SYN_CDS_1",

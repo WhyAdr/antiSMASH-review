@@ -52,6 +52,7 @@ class ClusterBlastResult:
     source_format: ClusterBlastSourceFormat
     module_schema_version: int | None = None
     result_schema_version: int | None = None
+    data_version: str | None = None
 
 
 class Severity(str, Enum):

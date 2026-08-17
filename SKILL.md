@@ -154,4 +154,4 @@ python -m pytest -p no:cacheprovider --basetemp="$pytestBase" \
 python -m antismash_review --help
 ```
 
-Keep local biological integration files private unless redistribution permission is explicit. Tests that use those files must skip cleanly when they are absent.
+Keep local biological integration files private unless redistribution permission is explicit. Tests that use those files must skip cleanly when they are absent. The optional private integration manifest and deterministic fingerprint contract are documented in `references/integration-testing.md`.

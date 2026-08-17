@@ -56,8 +56,22 @@ def test_render_records_synthetic_genbank(tmp_path: Path) -> None:
 
     assert "# antiSMASH review" in rendered1
     assert "## `SYNTH.1`" in rendered1
+    assert "- antiSMASH: 8.0.4" in rendered1
     assert "### Products" in rendered1
+    assert "- NRPS" in rendered1
+    assert "- synthetic product" in rendered1
     assert "### Diagnostics" in rendered1
+    assert "### ClusterBlast" not in rendered1
+
+
+def test_render_record_without_regions(tmp_path: Path) -> None:
+    gbk = write_synthetic_genbank(tmp_path / "synthetic.gbk")
+    records = parse_genbank(gbk)
+    records[0].regions.clear()
+
+    rendered = render_records(records)
+    assert "- Regions: 0" in rendered
+    assert "- No region product reported" in rendered
 
 
 def test_render_records_clusterblast_table_and_pairings(tmp_path: Path) -> None:

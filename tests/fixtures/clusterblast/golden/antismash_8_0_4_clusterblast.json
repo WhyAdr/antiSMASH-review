@@ -7,10 +7,8 @@
           "schema_version": 2,
           "record_id": "SYNTH.1",
           "general": {
-            "schema_version": 5,
-            "data_version": "1.0",
             "record_id": "SYNTH.1",
-            "search_type": "general",
+            "schema_version": 5,
             "results": [
               {
                 "region_number": 1,
@@ -19,8 +17,13 @@
                   [
                     {
                       "accession": "BGC0001000",
+                      "cluster_label": "c1-100",
+                      "proteins": ["orf1"],
                       "description": "Synthetic reference cluster",
-                      "cluster_type": "NRPS"
+                      "cluster_type": "NRPS",
+                      "tags": ["orf1"],
+                      "start": 1,
+                      "end": 100
                     },
                     {
                       "hits": 1,
@@ -28,26 +31,47 @@
                       "blast_score": 100.0,
                       "synteny_score": 2,
                       "core_bonus": 1,
-                      "similarity": 42,
                       "pairings": [
                         [
-                          "loc|SYNTH.1|0|100|SYN_CDS_1",
+                          "input|c1|0|100|SYN_CDS_1|+",
                           0,
                           {
                             "name": "orf1",
-                            "perc_ident": 80.0,
-                            "blastscore": 100.0,
+                            "genecluster": "BGC0001000_c1-100",
+                            "start": 1,
+                            "end": 100,
+                            "strand": "+",
+                            "annotation": "synthetic reference protein",
+                            "perc_ident": 80,
+                            "blastscore": 100,
                             "perc_coverage": 90.0,
                             "evalue": 1e-10,
-                            "locus_tag": "BGC0001000_1"
+                            "locus_tag": "BGC0001000_1",
+                            "full_name": "BGC0001000_orf1"
                           }
                         ]
-                      ]
+                      ],
+                      "similarity": 100
                     }
                   ]
-                ]
+                ],
+                "prefix": "clusterblast"
               }
-            ]
+            ],
+            "proteins": [
+              {
+                "full_name": "BGC0001000_orf1",
+                "name": "orf1",
+                "locus_tag": "BGC0001000_1",
+                "location": "1-100",
+                "strand": "+",
+                "annotations": "synthetic reference protein",
+                "draw_start": 1,
+                "draw_end": 100
+              }
+            ],
+            "search_type": "clusterblast",
+            "data_version": "1.0"
           }
         }
       }

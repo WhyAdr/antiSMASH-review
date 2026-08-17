@@ -44,10 +44,11 @@ jobs:
           /tmp/antismash-review-wheeltest/bin/antismash-review --help
           /tmp/antismash-review-wheeltest/bin/python -c "
           import antismash_review
+          import sys
           from pathlib import Path
           print(f'Version: {antismash_review.__version__}')
           pkg_path = Path(antismash_review.__file__).resolve()
+          venv_path = Path(sys.prefix).resolve()
           print(f'Import path: {pkg_path}')
-          assert 'antismash-review-wheeltest' in str(pkg_path), f'Shadowed: {pkg_path}'
+          assert venv_path in pkg_path.parents, f'Import is outside venv: {pkg_path}'
           "
-

@@ -61,7 +61,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - During inspection, consume aggregate GenBank files in preference to region files to avoid duplicate representations.
 - `loading.py` owns the shared GenBank plus ClusterBlast enrichment path used by inspection and comparison; the compatibility loader in `cli.py` is only a wrapper.
 - Native antiSMASH JSON alone remains unsupported as primary input; when a GenBank input is provided alongside JSON or sidecar text directories, sidecar enrichment parses and attaches ClusterBlast results.
-- Markdown and the top-level JSON diagnostics include evidence-scoped review diagnostics.
+- Markdown and the top-level JSON diagnostics include evidence-scoped review diagnostics. In record JSON, `records[].diagnostics` contains stored record-scoped diagnostics, while the top-level `diagnostics` collection is an aggregate index of input-level, stored record-level, and derived review diagnostics. Stored record diagnostics therefore appear both with their record and in the aggregate index by design.
 - The JSON envelope reports `schema_name: "antismash-review"`, `schema_version: "0.4.0"`, and `parser_version`, and embeds `antismash_provenance` on each record. Record schema `0.4.0` adds `data_version` to `ClusterBlastResult` and separates input-level diagnostics from record-scoped diagnostics.
 - TSV (`--format tsv`) is a compact one-row-per-record summary.
 - Entity-level TSV exports (`--format gene-tsv`, `--format domain-tsv`, and `--format clusterblast-tsv`) export one row per entity. All entity TSV coordinates (`start`, `end`) are the model's zero-based, half-open coordinates `[start, end)` (never silently converted to GenBank one-based display coordinates).
@@ -109,7 +109,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 
 - Parse text sidecars from canonical `clusterblast/`, `knownclusterblast/`, and `subclusterblast/` directories using natural region sorting (`_cN.txt`).
 - The current contract reads recognized `.txt` sidecars directly inside those canonical directories; nested HTML/detail assets are ignored.
-- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 5.x/6.x), `2` (antiSMASH 7.0.x), `3` (antiSMASH 7.1.x), and `5` (antiSMASH 8.x). ClusterBlast `data_version` is preserved when present.
+- Parse native antiSMASH JSON `antismash.modules.clusterblast` modules supporting module schemas `1` and `2`, and result schemas `1` (antiSMASH 5.x/6.x), `2` (antiSMASH 7.0.x), `3` (antiSMASH 7.1.x), and `5` (antiSMASH 8.x). ClusterBlast `data_version` is preserved when present. When serialized section identifiers are present, `general`, `knowncluster`, and `subcluster` must carry `search_type` values `clusterblast`, `knownclusterblast`, and `subclusterblast`, respectively.
 - Precedence is per `(record_id, region_number, search_type)` key: text files are preferred when present for a key, while JSON fills remaining keys.
 - Merging and attaching sidecar results is transactional: in strict mode, any duplicate result key or unattachable target fails fast before modifying records; in lenient mode, duplicate results emit `clusterblast_duplicate_result`, unattachable targets emit `clusterblast_attach_failed`, and all valid, attachable results are preserved and attached.
 - Retain valid empty results as negative evidence and retain source path, SHA-256, source format, and supported schema versions as provenance.
@@ -127,6 +127,7 @@ Region-level Pfam duplication does not create a diagnostic. Raw and deduplicated
 - The coordinate assumption is appropriate only when coordinate correspondence has been independently established, such as re-annotations of the same contigs. It does not establish sequence homology between arbitrary isolates.
 - antiSMASH region GBKs commonly rebase extracted regions to coordinate zero. Such files do not automatically share their original chromosome coordinate system and must not use coordinate matching solely because they came from the same run.
 - Comparison evaluates product gains/losses with multiset counts, new/resolved diagnostics, feature counts delta, and intergenic distance summaries (including circular topology wrap gaps).
+- Input-level loading diagnostics are deliberately excluded from record-level comparison deltas. Comparison schema `0.2.0` does not yet serialize them separately.
 - Comparative JSON exports `schema_name: "antismash-review-comparison"` with `schema_version: "0.2.0"`.
 
 ## Provenance

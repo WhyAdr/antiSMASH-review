@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from antismash_review.clusterblast import (
     merge_clusterblast_results,
     parse_clusterblast_text,
 )
+from antismash_review.compare import compare_records
 from antismash_review.discovery import discover
 from antismash_review.genbank import parse_genbank
 from antismash_review.loading import load_review_input
@@ -225,7 +227,7 @@ def test_load_review_records_empty_manifest_error(tmp_path: Path) -> None:
 
 
 def test_load_review_records_lenient_sidecar_diagnostic(tmp_path: Path) -> None:
-    write_synthetic_genbank(tmp_path / "synthetic.gbk")
+    genbank_path = write_synthetic_genbank(tmp_path / "synthetic.gbk")
     cb_dir = tmp_path / "clusterblast"
     cb_dir.mkdir()
     bad_cb = cb_dir / "contig_1_c1.txt"
@@ -241,6 +243,17 @@ def test_load_review_records_lenient_sidecar_diagnostic(tmp_path: Path) -> None:
     assert len(loaded.records) == 1
     assert any(d.code == "clusterblast_parse_failed" for d in loaded.input_diagnostics)
     assert not any(d.code == "clusterblast_parse_failed" for d in loaded.records[0].diagnostics)
+
+    comparison = compare_records(
+        parse_genbank(genbank_path),
+        loaded.records,
+        left_input=genbank_path,
+        right_input=tmp_path,
+    )
+    assert not any(
+        diagnostic.code == "clusterblast_parse_failed"
+        for diagnostic in comparison.matched[0].new_diagnostics
+    )
 
 
 def test_lenient_loading_retains_valid_sidecars_alongside_corrupt_ones(
@@ -451,3 +464,97 @@ def test_lenient_loading_diagnostic_isolation_multi_record(tmp_path: Path) -> No
     assert not any(d.code == "clusterblast_attach_failed" for d in rec_a.diagnostics)
     # rec_b must have the attach failed diagnostic
     assert any(d.code == "clusterblast_attach_failed" for d in rec_b.diagnostics)
+
+
+def test_duplicate_result_diagnostic_routes_to_record_b_and_comparison_b(
+    tmp_path: Path,
+) -> None:
+    rec_a_path = write_synthetic_genbank(tmp_path / "rec_a.gbk")
+    rec_b_path = write_synthetic_genbank(tmp_path / "rec_b.gbk")
+    rec_b_path.write_text(
+        rec_b_path.read_text(encoding="utf-8").replace("SYNTH.1", "RECORD_B"),
+        encoding="utf-8",
+    )
+    baseline_records = parse_genbank(rec_a_path) + parse_genbank(rec_b_path)
+
+    region_result = {"region_number": 1, "total_hits": 0, "ranking": []}
+    native_json = {
+        "records": [
+            {
+                "id": "RECORD_B",
+                "modules": {
+                    "antismash.modules.clusterblast": {
+                        "schema_version": 2,
+                        "record_id": "RECORD_B",
+                        "general": {
+                            "schema_version": 5,
+                            "record_id": "RECORD_B",
+                            "search_type": "clusterblast",
+                            "results": [region_result, region_result],
+                        },
+                    }
+                },
+            }
+        ]
+    }
+    (tmp_path / "duplicate.json").write_text(json.dumps(native_json), encoding="utf-8")
+
+    loaded = load_review_input(discover(tmp_path), lenient=True)
+    rec_a = next(record for record in loaded.records if record.record_id == "SYNTH.1")
+    rec_b = next(record for record in loaded.records if record.record_id == "RECORD_B")
+    assert not any(d.code == "clusterblast_duplicate_result" for d in rec_a.diagnostics)
+    assert any(d.code == "clusterblast_duplicate_result" for d in rec_b.diagnostics)
+    assert not any(d.code == "clusterblast_duplicate_result" for d in loaded.input_diagnostics)
+
+    comparison = compare_records(
+        baseline_records,
+        loaded.records,
+        left_input=tmp_path,
+        right_input=tmp_path,
+    )
+    by_record = {item.left_record_id: item for item in comparison.matched}
+    assert not any(
+        diagnostic.code == "clusterblast_duplicate_result"
+        for diagnostic in by_record["SYNTH.1"].new_diagnostics
+    )
+    assert any(
+        diagnostic.code == "clusterblast_duplicate_result"
+        for diagnostic in by_record["RECORD_B"].new_diagnostics
+    )
+
+
+def test_unattachable_unknown_record_stays_input_scoped(tmp_path: Path) -> None:
+    write_synthetic_genbank(tmp_path / "synthetic.gbk")
+    native_json = {
+        "records": [
+            {
+                "id": "UNKNOWN_RECORD",
+                "modules": {
+                    "antismash.modules.clusterblast": {
+                        "schema_version": 2,
+                        "record_id": "UNKNOWN_RECORD",
+                        "general": {
+                            "schema_version": 5,
+                            "record_id": "UNKNOWN_RECORD",
+                            "search_type": "clusterblast",
+                            "results": [{"region_number": 1, "total_hits": 0, "ranking": []}],
+                        },
+                    }
+                },
+            }
+        ]
+    }
+    (tmp_path / "unknown.json").write_text(json.dumps(native_json), encoding="utf-8")
+
+    loaded = load_review_input(discover(tmp_path), lenient=True)
+    assert not any(
+        diagnostic.code == "clusterblast_attach_failed"
+        for diagnostic in loaded.records[0].diagnostics
+    )
+    diagnostics = [
+        diagnostic
+        for diagnostic in loaded.input_diagnostics
+        if diagnostic.code == "clusterblast_attach_failed"
+    ]
+    assert len(diagnostics) == 1
+    assert diagnostics[0].record_id == "UNKNOWN_RECORD"

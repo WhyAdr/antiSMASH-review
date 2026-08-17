@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from antismash_review.clusterblast import (
     parse_clusterblast_text,
 )
 from antismash_review.exporters.entity_tables import render_clusterblast_tsv
+from antismash_review.exporters.json_export import dumps_records
 from antismash_review.genbank import parse_genbank
 from tests.fixtures.build_fixture import write_synthetic_genbank
 
@@ -188,8 +190,12 @@ def test_clusterblast_results_merge_text_precedence_and_attach(tmp_path: Path) -
 def test_json_clusterblast_all_sections(tmp_path: Path) -> None:
     document = _minimal_document()
     mod = _module(document)
+    mod["general"]["record_id"] = "contig_1"
+    mod["general"]["search_type"] = "clusterblast"
     mod["knowncluster"] = {
         "schema_version": 5,
+        "record_id": "contig_1",
+        "search_type": "knownclusterblast",
         "results": [
             {
                 "region_number": 1,
@@ -200,6 +206,8 @@ def test_json_clusterblast_all_sections(tmp_path: Path) -> None:
     }
     mod["subcluster"] = {
         "schema_version": 5,
+        "record_id": "contig_1",
+        "search_type": "subclusterblast",
         "results": [
             {
                 "region_number": 1,
@@ -352,7 +360,8 @@ def test_json_section_record_id_mismatch_rejected(tmp_path: Path) -> None:
 
 def test_json_section_search_type_mismatch_rejected(tmp_path: Path) -> None:
     doc = _minimal_document()
-    _module(doc)["general"]["search_type"] = "knowncluster"
+    # The section key is ``general`` but upstream serializes ``clusterblast``.
+    _module(doc)["general"]["search_type"] = "general"
     with pytest.raises(ClusterBlastParseError, match="search_type"):
         parse_clusterblast_json(_write_document(tmp_path, doc))
 
@@ -388,7 +397,6 @@ def test_merge_and_attach_errors(tmp_path: Path) -> None:
 def test_clusterblast_json_fixtures_across_versions() -> None:
     fixtures_dir = Path(__file__).parent / "fixtures" / "clusterblast"
     min_dir = fixtures_dir / "minimal"
-    golden_dir = fixtures_dir / "golden"
 
     v6_file = min_dir / "schema1_minimal.json"
     v7_0_file = min_dir / "schema2_minimal.json"
@@ -451,14 +459,201 @@ def test_clusterblast_json_fixtures_across_versions() -> None:
         assert pairing.evalue == 1e-10
         assert pairing.subject_protein_id == "BGC0001000_1"
 
-    # Golden fixtures test
-    for golden_name in (
-        "antismash_6_1_1_clusterblast.json",
-        "antismash_7_0_1_clusterblast.json",
-        "antismash_7_1_0_clusterblast.json",
-        "antismash_8_0_4_clusterblast.json",
-    ):
-        golden_res = parse_clusterblast_json(golden_dir / golden_name)
-        assert len(golden_res) == 1
-        assert golden_res[0].record_id == "SYNTH.1"
-        assert len(golden_res[0].rankings) == 1
+
+@pytest.mark.parametrize(
+    (
+        "filename",
+        "result_schema",
+        "data_version",
+        "similarity",
+        "reference_fields",
+        "subject_fields",
+        "protein_fields",
+    ),
+    [
+        (
+            "antismash_6_1_1_clusterblast.json",
+            1,
+            None,
+            None,
+            {"accession", "cluster_label", "proteins", "description", "cluster_type", "tags"},
+            {
+                "name",
+                "genecluster",
+                "start",
+                "end",
+                "strand",
+                "annotation",
+                "perc_ident",
+                "blastscore",
+                "perc_coverage",
+                "evalue",
+                "locus_tag",
+            },
+            {"name", "locus_tag", "location", "strand", "annotations"},
+        ),
+        (
+            "antismash_7_0_1_clusterblast.json",
+            2,
+            "1.0",
+            None,
+            {"accession", "cluster_label", "proteins", "description", "cluster_type", "tags"},
+            {
+                "name",
+                "genecluster",
+                "start",
+                "end",
+                "strand",
+                "annotation",
+                "perc_ident",
+                "blastscore",
+                "perc_coverage",
+                "evalue",
+                "locus_tag",
+            },
+            {"name", "locus_tag", "location", "strand", "annotations"},
+        ),
+        (
+            "antismash_7_1_0_clusterblast.json",
+            3,
+            "1.0",
+            100,
+            {"accession", "cluster_label", "proteins", "description", "cluster_type", "tags"},
+            {
+                "name",
+                "genecluster",
+                "start",
+                "end",
+                "strand",
+                "annotation",
+                "perc_ident",
+                "blastscore",
+                "perc_coverage",
+                "evalue",
+                "locus_tag",
+            },
+            {"name", "locus_tag", "location", "strand", "annotations"},
+        ),
+        (
+            "antismash_8_0_4_clusterblast.json",
+            5,
+            "1.0",
+            100,
+            {
+                "accession",
+                "cluster_label",
+                "proteins",
+                "description",
+                "cluster_type",
+                "tags",
+                "start",
+                "end",
+            },
+            {
+                "name",
+                "genecluster",
+                "start",
+                "end",
+                "strand",
+                "annotation",
+                "perc_ident",
+                "blastscore",
+                "perc_coverage",
+                "evalue",
+                "locus_tag",
+                "full_name",
+            },
+            {
+                "full_name",
+                "name",
+                "locus_tag",
+                "location",
+                "strand",
+                "annotations",
+                "draw_start",
+                "draw_end",
+            },
+        ),
+    ],
+)
+def test_serializer_reconstructed_golden_fixtures(
+    filename: str,
+    result_schema: int,
+    data_version: str | None,
+    similarity: int | None,
+    reference_fields: set[str],
+    subject_fields: set[str],
+    protein_fields: set[str],
+) -> None:
+    path = Path(__file__).parent / "fixtures" / "clusterblast" / "golden" / filename
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    section = raw["records"][0]["modules"]["antismash.modules.clusterblast"]["general"]
+    region = section["results"][0]
+    reference, score = region["ranking"][0]
+    subject = score["pairings"][0][2]
+
+    assert section["record_id"] == "SYNTH.1"
+    assert section["search_type"] == "clusterblast"
+    assert section["schema_version"] == result_schema
+    assert section.get("data_version") == data_version
+    assert region["prefix"] == "clusterblast"
+    assert set(reference) == reference_fields
+    assert set(subject) == subject_fields
+    assert set(section["proteins"][0]) == protein_fields
+    assert score.get("similarity") == similarity
+
+    result = parse_clusterblast_json(path)[0]
+    assert result.record_id == "SYNTH.1"
+    assert result.module_schema_version == 2
+    assert result.result_schema_version == result_schema
+    assert result.data_version == data_version
+    assert result.rankings[0].similarity == similarity
+    assert result.rankings[0].pairings[0].query_gene == "SYN_CDS_1"
+
+
+def test_golden_fixture_hashes_are_frozen() -> None:
+    golden_dir = Path(__file__).parent / "fixtures" / "clusterblast" / "golden"
+    expected = {
+        "antismash_6_1_1_clusterblast.json": (
+            "f750d4f7049db154c147aaf67d69bc3426c70a555ff0ecd2d585b3c16ad63b7d"
+        ),
+        "antismash_7_0_1_clusterblast.json": (
+            "6172e2e82587f3d2a3fd7b5b0291410f819f8e1e0abf79854505782387cd7671"
+        ),
+        "antismash_7_1_0_clusterblast.json": (
+            "27752d74ce4b84bda8e204d12d659455c546b734b76c6990f2ed491257426ecd"
+        ),
+        "antismash_8_0_4_clusterblast.json": (
+            "9971b8bcd4b5b6eb987e2ff5065051eeabc69defe910433368a71d1c9e3aca92"
+        ),
+    }
+    observed = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(golden_dir.glob("*.json"))
+    }
+    assert observed == expected
+
+
+def test_data_version_exported_in_record_json_and_clusterblast_tsv(tmp_path: Path) -> None:
+    fixture = (
+        Path(__file__).parent
+        / "fixtures"
+        / "clusterblast"
+        / "golden"
+        / "antismash_7_0_1_clusterblast.json"
+    )
+    result = parse_clusterblast_json(fixture)[0]
+    records = parse_genbank(write_synthetic_genbank(tmp_path / "synthetic.gbk"))
+    records[0].clusterblast_results.append(result)
+
+    exported = json.loads(dumps_records(records))
+    exported_result = exported["records"][0]["clusterblast_results"][0]
+    assert exported_result["module_schema_version"] == 2
+    assert exported_result["result_schema_version"] == 2
+    assert exported_result["data_version"] == "1.0"
+
+    lines = render_clusterblast_tsv(records).splitlines()
+    row = dict(zip(lines[0].split("\t"), lines[1].split("\t"), strict=True))
+    assert row["module_schema_version"] == "2"
+    assert row["result_schema_version"] == "2"
+    assert row["data_version"] == "1.0"

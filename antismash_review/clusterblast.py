@@ -384,15 +384,17 @@ def _parse_clusterblast_json_unchecked(path: Path) -> list[ClusterBlastResult]:
                         f"module record_id {cb_record_id!r} in {path}"
                     )
 
-            # Validate optional section-level search_type when present.
+            # Upstream section keys omit the ``blast`` suffix used by the
+            # serialized GeneralResults.search_type value (for example,
+            # ``general`` contains ``search_type=clusterblast``).
             if "search_type" in section and section["search_type"] is not None:
                 sec_search_type = _required_nonempty_string(
                     section["search_type"], f"{sec_key} search_type", path
                 )
-                if sec_search_type != sec_key:
+                if sec_search_type != search_type:
                     raise ClusterBlastParseError(
                         f"ClusterBlast {sec_key} search_type {sec_search_type!r} does not "
-                        f"match section key {sec_key!r} in {path}"
+                        f"match expected value {search_type!r} in {path}"
                     )
 
             raw_results = section.get("results")

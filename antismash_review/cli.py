@@ -118,7 +118,11 @@ def load_review_records(
     *,
     lenient: bool = False,
 ) -> tuple[list[Record], set[Path]]:
-    """Compatibility wrapper for the pre-Phase-0 loader API."""
+    """Compatibility wrapper for the pre-Phase-0 loader API.
+
+    Input-level diagnostics are intentionally unavailable through this legacy
+    return shape.  New callers should use :func:`load_review_input`.
+    """
 
     loaded = load_review_input(manifest, lenient=lenient)
     return loaded.records, loaded.input_paths
